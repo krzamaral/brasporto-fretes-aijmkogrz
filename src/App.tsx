@@ -9,15 +9,21 @@ import Upload from './pages/Upload'
 import Review from './pages/Review'
 import Ranking from './pages/Ranking'
 import NotFound from './pages/NotFound'
+import { AuthProvider, useAuth } from './hooks/use-auth'
+import { Outlet } from 'react-router-dom'
 
-const App = () => (
-  <BrowserRouter future={{ v7_startTransition: false, v7_relativeSplatPath: false }}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <Routes>
-        <Route path="/login" element={<Login />} />
+const ProtectedRoute = () => {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  if (!user) return <Navigate to="/login" replace />
+  return <Outlet />
+}
 
+const AppRoutes = () => {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -25,10 +31,21 @@ const App = () => (
           <Route path="/review" element={<Review />} />
           <Route path="/ranking" element={<Ranking />} />
         </Route>
+      </Route>
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  )
+}
 
-        <Route path="*" element={<NotFound />} />
-      </Routes>
-    </TooltipProvider>
+const App = () => (
+  <BrowserRouter future={{ v7_startTransition: false, v7_relativeSplatPath: false }}>
+    <AuthProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <AppRoutes />
+      </TooltipProvider>
+    </AuthProvider>
   </BrowserRouter>
 )
 

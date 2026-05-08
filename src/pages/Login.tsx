@@ -12,14 +12,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { useAuth } from '@/hooks/use-auth'
 
 export default function Login() {
   const [email, setEmail] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
+  const { signIn } = useAuth()
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
@@ -35,11 +37,17 @@ export default function Login() {
 
     setIsLoading(true)
 
-    // Simulate network request
-    setTimeout(() => {
+    const result = await signIn(email)
+
+    if (result.error) {
+      setError(result.error.message || 'Erro ao enviar link de acesso. Tente novamente.')
       setIsLoading(false)
-      navigate('/dashboard')
-    }, 800)
+    } else {
+      setTimeout(() => {
+        setIsLoading(false)
+        navigate('/dashboard')
+      }, 800)
+    }
   }
 
   return (
@@ -55,8 +63,8 @@ export default function Login() {
         <Card className="border-0 shadow-xl rounded-2xl overflow-hidden">
           <div className="h-2 w-full bg-accent" />
           <CardHeader className="space-y-3 pb-6 text-center">
-            <CardTitle className="text-2xl font-bold">Acesso à Plataforma</CardTitle>
-            <CardDescription className="text-base">
+            <CardTitle className="text-2xl font-bold text-slate-800">Acesso à Plataforma</CardTitle>
+            <CardDescription className="text-base text-slate-500">
               Plataforma de comparação e decisão de fretes
             </CardDescription>
           </CardHeader>
@@ -90,7 +98,7 @@ export default function Login() {
                 {isLoading ? (
                   <span className="flex items-center gap-2">
                     <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Enviando...
+                    Enviando Magic Link...
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">

@@ -1,0 +1,167 @@
+{
+  "generatedAt": "2026-05-08T20:07:53.367Z",
+  "collections": [
+    {
+      "name": "users",
+      "type": "auth",
+      "apiRules": {
+        "list": "id = @request.auth.id",
+        "view": "id = @request.auth.id",
+        "create": "",
+        "update": "id = @request.auth.id",
+        "delete": "id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "avatar",
+          "type": "file",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX `idx_tokenKey__pb_users_auth_` ON `users` (`tokenKey`)",
+        "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != ''"
+      ]
+    },
+    {
+      "name": "quotations",
+      "type": "base",
+      "apiRules": {
+        "list": "user_id = @request.auth.id",
+        "view": "user_id = @request.auth.id",
+        "create": "user_id = @request.auth.id",
+        "update": "user_id = @request.auth.id",
+        "delete": "user_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "agent_name",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "modal",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Aéreo", "FCL", "LCL"]
+        },
+        {
+          "name": "cost",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "transit_time",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "etd",
+          "type": "date",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "free_time",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "score",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_quotations_user_id ON quotations (user_id)"]
+    },
+    {
+      "name": "extracted_data",
+      "type": "base",
+      "apiRules": {
+        "list": "quotation_id.user_id = @request.auth.id",
+        "view": "quotation_id.user_id = @request.auth.id",
+        "create": "quotation_id.user_id = @request.auth.id",
+        "update": "quotation_id.user_id = @request.auth.id",
+        "delete": "quotation_id.user_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "quotation_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "quotations"
+        },
+        {
+          "name": "raw_data",
+          "type": "json",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": ["CREATE INDEX idx_extracted_data_quotation_id ON extracted_data (quotation_id)"]
+    }
+  ]
+}

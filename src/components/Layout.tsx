@@ -1,4 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
+import { useAuth } from '@/hooks/use-auth'
 import { LayoutDashboard, UploadCloud, ClipboardCheck, Trophy, LogOut, Truck } from 'lucide-react'
 import {
   Sidebar,
@@ -30,6 +31,7 @@ const MENU_ITEMS = [
 
 export default function Layout() {
   const location = useLocation()
+  const { user, signOut } = useAuth()
 
   const currentRouteName =
     MENU_ITEMS.find((item) => item.url === location.pathname)?.title || 'Brasporto'
@@ -75,23 +77,27 @@ export default function Layout() {
                       src="https://img.usecurling.com/ppl/thumbnail?gender=male&seed=1"
                       alt="User profile"
                     />
-                    <AvatarFallback>UN</AvatarFallback>
+                    <AvatarFallback>
+                      {user?.name ? user.name.substring(0, 2).toUpperCase() : 'UN'}
+                    </AvatarFallback>
                   </Avatar>
                   <div className="flex flex-col items-start text-sm text-sidebar-foreground">
-                    <span className="font-medium">João Silva</span>
-                    <span className="text-xs opacity-70">joao.silva@brasporto.com</span>
+                    <span className="font-medium">
+                      {user?.name || user?.email?.split('@')[0] || 'Usuário'}
+                    </span>
+                    <span className="text-xs opacity-70">{user?.email}</span>
                   </div>
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuItem
-                  asChild
+                  onClick={() => signOut()}
                   className="text-destructive focus:bg-destructive/10 focus:text-destructive cursor-pointer"
                 >
-                  <Link to="/login" className="w-full flex items-center gap-2">
+                  <div className="w-full flex items-center gap-2">
                     <LogOut className="h-4 w-4" />
                     <span>Sair da conta</span>
-                  </Link>
+                  </div>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
