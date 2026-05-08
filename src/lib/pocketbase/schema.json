@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-08T20:09:42.141Z",
+  "generatedAt": "2026-05-08T20:16:33.901Z",
   "collections": [
     {
       "name": "users",
@@ -77,13 +77,13 @@
         {
           "name": "transit_time",
           "type": "number",
-          "required": true,
+          "required": false,
           "system": false
         },
         {
           "name": "etd",
           "type": "date",
-          "required": true,
+          "required": false,
           "system": false
         },
         {
@@ -118,6 +118,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "taxable_weight",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_quotations_user_id ON quotations (user_id)"]

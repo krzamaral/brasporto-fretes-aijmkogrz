@@ -5,9 +5,10 @@ export interface Quotation {
   agent_name: string
   modal: 'Aéreo' | 'FCL' | 'LCL'
   cost: number
-  transit_time: number
-  etd: string
-  free_time: number
+  transit_time?: number
+  etd?: string
+  free_time?: number
+  taxable_weight?: number
   score: number
   user_id: string
   created: string
