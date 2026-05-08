@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { FolderOpen, FileUp, PlusCircle, ArrowRight, Ship, Plane } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  FolderOpen,
+  FileUp,
+  PlusCircle,
+  ArrowRight,
+  Ship,
+  Plane,
+  History as HistoryIcon,
+} from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -9,6 +17,7 @@ import { getQuotations, type Quotation } from '@/services/quotations'
 
 export default function Dashboard() {
   const [quotations, setQuotations] = useState<Quotation[]>([])
+  const navigate = useNavigate()
 
   const loadData = async () => {
     try {
@@ -135,9 +144,12 @@ export default function Dashboard() {
           <PlusCircle className="h-8 w-8 mb-2 opacity-50" />
           <span className="text-sm font-medium">Fornecedores Top 3</span>
         </Card>
-        <Card className="p-6 border border-dashed bg-transparent shadow-none flex flex-col items-center justify-center text-slate-400 h-40">
-          <PlusCircle className="h-8 w-8 mb-2 opacity-50" />
-          <span className="text-sm font-medium">Histórico Recente</span>
+        <Card
+          className="p-6 border border-dashed bg-transparent shadow-none flex flex-col items-center justify-center text-slate-400 h-40 hover:bg-slate-50 transition-colors cursor-pointer"
+          onClick={() => navigate('/history')}
+        >
+          <HistoryIcon className="h-8 w-8 mb-2 opacity-50 text-blue-500" />
+          <span className="text-sm font-medium text-slate-600">Histórico Recente</span>
         </Card>
       </div>
     </div>

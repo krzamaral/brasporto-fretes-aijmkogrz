@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Trophy, Medal, Award, Sparkles } from 'lucide-react'
+import { ArrowLeft, Trophy, Medal, Award, Sparkles, FileDown } from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -49,8 +49,32 @@ export default function Ranking() {
   })
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between mb-8">
+    <div className="space-y-6 animate-fade-in print:space-y-4 print:m-0">
+      <style>{`
+        @media print {
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          @page { margin: 1cm; }
+        }
+      `}</style>
+
+      {/* Print Header */}
+      <div className="hidden print:flex items-center justify-between mb-8 border-b pb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
+            B
+          </div>
+          <h1 className="text-2xl font-bold text-slate-800">Brasporto Fretes</h1>
+        </div>
+        <div className="text-right">
+          <h2 className="text-xl font-semibold text-slate-700">Relatório de Ranking de Cotações</h2>
+          <p className="text-sm text-slate-500">Decisão Estratégica de Frete</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 print:hidden gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight mb-1 text-slate-800">
             Ranking de Fornecedores
@@ -59,20 +83,30 @@ export default function Ranking() {
             Análise comparativa para decisão estratégica de frete.
           </p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link to="/review" className="flex items-center gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Voltar
-          </Link>
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => window.print()}
+            variant="outline"
+            className="flex items-center gap-2"
+          >
+            <FileDown className="h-4 w-4" />
+            Baixar PDF
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/review" className="flex items-center gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Voltar
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm">
+      <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm print:shadow-none print:border-none print:p-0">
         <Stepper currentStep={3} />
 
         <div className="mt-12">
           <div className="grid gap-6 md:grid-cols-3">
-            {quotations.map((q, index) => {
+            {quotations.slice(0, 3).map((q, index) => {
               const isTop = index === 0
               const isSecond = index === 1
               const isThird = index === 2
@@ -143,13 +177,21 @@ export default function Ranking() {
                       <span className="text-sm text-slate-500">Transit Time</span>
                       <span className="font-semibold text-slate-800">{q.transit_time} dias</span>
                     </div>
-                    <div className="flex justify-between items-center py-2">
+                    <div className="flex justify-between items-center py-2 border-b border-slate-100">
                       <span className="text-sm text-slate-500">Free Time</span>
-                      <span className="font-semibold text-slate-800">{q.free_time} dias</span>
+                      <span className="font-semibold text-slate-800">{q.free_time || 0} dias</span>
                     </div>
+                    {q.etd && (
+                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                        <span className="text-sm text-slate-500">ETD</span>
+                        <span className="font-semibold text-slate-800">
+                          {new Date(q.etd).toLocaleDateString('pt-BR')}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="mt-6">
+                  <div className="mt-6 print:hidden">
                     <Button
                       className={cn(
                         'w-full',
@@ -173,10 +215,15 @@ export default function Ranking() {
         </div>
       </Card>
 
-      <div className="flex justify-between mt-6">
+      <div className="flex justify-between mt-6 print:hidden">
         <Button asChild variant="ghost">
           <Link to="/dashboard">Voltar ao Início</Link>
         </Button>
+      </div>
+
+      {/* Print Footer */}
+      <div className="hidden print:block mt-12 pt-4 border-t text-center text-sm text-slate-500">
+        Gerado em {new Date().toLocaleString('pt-BR')}
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Upload from './pages/Upload'
 import Review from './pages/Review'
 import Ranking from './pages/Ranking'
+import History from './pages/History'
 import NotFound from './pages/NotFound'
 import { AuthProvider, useAuth } from './hooks/use-auth'
 import { Outlet } from 'react-router-dom'
@@ -30,6 +31,7 @@ const AppRoutes = () => {
           <Route path="/upload" element={<Upload />} />
           <Route path="/review" element={<Review />} />
           <Route path="/ranking" element={<Ranking />} />
+          <Route path="/history" element={<History />} />
         </Route>
       </Route>
       <Route path="*" element={<NotFound />} />
