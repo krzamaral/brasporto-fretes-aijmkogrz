@@ -13,7 +13,8 @@ export default function Dashboard() {
   const loadData = async () => {
     try {
       const data = await getQuotations()
-      setQuotations(data)
+      const sorted = [...data].sort((a, b) => (b.score || 0) - (a.score || 0))
+      setQuotations(sorted)
     } catch (e) {
       console.error(e)
     }
@@ -85,13 +86,25 @@ export default function Dashboard() {
                   key={q.id}
                   className="p-4 border-slate-200 shadow-sm hover:shadow-md transition-shadow"
                 >
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="font-semibold text-slate-800">{q.agent_name}</span>
-                    {q.modal === 'Aéreo' ? (
-                      <Plane className="h-5 w-5 text-blue-500" />
-                    ) : (
-                      <Ship className="h-5 w-5 text-blue-500" />
-                    )}
+                  <div className="flex justify-between items-start mb-3 overflow-hidden">
+                    <span
+                      className="font-semibold text-slate-800 truncate mr-2"
+                      title={q.agent_name}
+                    >
+                      {q.agent_name}
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {(q.score || 0) > 0 && (
+                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">
+                          {q.score} pts
+                        </span>
+                      )}
+                      {q.modal === 'Aéreo' ? (
+                        <Plane className="h-5 w-5 text-blue-500" />
+                      ) : (
+                        <Ship className="h-5 w-5 text-blue-500" />
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-1 text-sm text-slate-600">
                     <p>

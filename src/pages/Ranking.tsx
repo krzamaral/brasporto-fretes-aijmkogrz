@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowLeft, Trophy, Medal, Award } from 'lucide-react'
+import { ArrowLeft, Trophy, Medal, Award, Sparkles } from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -14,11 +14,30 @@ export default function Ranking() {
   const loadData = async () => {
     try {
       const data = await getQuotations()
-      const sorted = [...data].sort((a, b) => b.score - a.score || a.cost - b.cost)
+      const sorted = [...data].sort((a, b) => (b.score || 0) - (a.score || 0) || a.cost - b.cost)
       setQuotations(sorted)
     } catch (e) {
       console.error(e)
     }
+  }
+
+  const generateJustification = (q: Quotation, all: Quotation[]) => {
+    if (all.length === 0) return ''
+    const isBestCost = Math.min(...all.map((x) => x.cost)) === q.cost
+    const minTT = Math.min(...all.map((x) => x.transit_time || 999))
+    const isBestTT = minTT !== 999 && minTT === (q.transit_time || 999)
+    const maxFT = Math.max(...all.map((x) => x.free_time || 0))
+    const isBestFT = maxFT > 0 && maxFT === (q.free_time || 0)
+
+    const factors = []
+    if (isBestCost) factors.push(`melhor custo (US$ ${q.cost.toFixed(2)})`)
+    if (isBestTT && q.transit_time) factors.push(`menor prazo (${q.transit_time} dias)`)
+    if (isBestFT && q.free_time) factors.push(`maior free time (${q.free_time} dias)`)
+
+    if (factors.length > 0) {
+      return `Recomendada por: ${factors.join(', ')}.`
+    }
+    return `Opção balanceada considerando custo-benefício e prazo de entrega.`
   }
 
   useEffect(() => {
@@ -70,10 +89,10 @@ export default function Ranking() {
                 >
                   {isTop && <div className="absolute top-0 left-0 w-full h-1 bg-amber-400" />}
                   <div className="flex justify-between items-start mb-6">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 overflow-hidden pr-2">
                       <div
                         className={cn(
-                          'flex items-center justify-center w-10 h-10 rounded-full',
+                          'flex items-center justify-center w-10 h-10 rounded-full shrink-0',
                           isTop
                             ? 'bg-amber-100 text-amber-600'
                             : isSecond
@@ -93,16 +112,27 @@ export default function Ranking() {
                           <span className="font-bold">{index + 1}º</span>
                         )}
                       </div>
-                      <div>
-                        <h4 className="font-bold text-slate-800">{q.agent_name}</h4>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-slate-800 truncate" title={q.agent_name}>
+                          {q.agent_name}
+                        </h4>
                         <p className="text-xs text-slate-500 font-medium">{q.modal}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-2xl font-bold text-slate-800">{q.score}</div>
+                    <div className="text-right shrink-0">
+                      <div className="text-2xl font-bold text-slate-800">{q.score || 0}</div>
                       <div className="text-xs text-slate-500 uppercase tracking-wider">Score</div>
                     </div>
                   </div>
+
+                  {index < 3 && (
+                    <div className="mb-4 bg-blue-50/50 rounded-lg p-3 border border-blue-100 flex gap-2 items-start">
+                      <Sparkles className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                      <p className="text-sm text-slate-700 leading-tight">
+                        {generateJustification(q, quotations)}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-3">
                     <div className="flex justify-between items-center py-2 border-b border-slate-100">

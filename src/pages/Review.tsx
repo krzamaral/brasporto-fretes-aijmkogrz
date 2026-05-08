@@ -24,7 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { getLatestExtractedData } from '@/services/extracted_data'
-import { createQuotation } from '@/services/quotations'
+import { createQuotation, getQuotations, updateQuotation } from '@/services/quotations'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -148,8 +148,9 @@ export default function Review() {
     if (!user) return
     setIsSubmitting(true)
     try {
-      await createQuotation({
-        user_id: user.id,
+      const existingQuots = await getQuotations()
+
+      const newQuotBase = {
         agent_name: data.agent_name,
         modal: data.modal,
         cost: data.cost as number,
@@ -158,8 +159,61 @@ export default function Review() {
         free_time: data.modal === 'FCL' && data.free_time !== null ? data.free_time : undefined,
         transit_time: data.transit_time !== null ? data.transit_time : undefined,
         etd: data.etd || undefined,
+      }
+
+      const getEtdDays = (etd?: string) =>
+        etd ? Math.max(0, (new Date(etd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 30
+
+      const allQuots = [...existingQuots, newQuotBase as any]
+
+      const costs = allQuots.map((q) => q.cost)
+      const maxC = Math.max(...costs),
+        minC = Math.min(...costs)
+
+      const tts = allQuots.map((q) => q.transit_time || 30)
+      const maxTT = Math.max(...tts),
+        minTT = Math.min(...tts)
+
+      const etds = allQuots.map((q) => getEtdDays(q.etd))
+      const maxETD = Math.max(...etds),
+        minETD = Math.min(...etds)
+
+      const fts = allQuots.map((q) => q.free_time || 0)
+      const maxFT = Math.max(...fts),
+        minFT = Math.min(...fts)
+
+      const calcScore = (q: any) => {
+        const normC = maxC === minC ? 100 : ((maxC - q.cost) / (maxC - minC)) * 100
+        const tt = q.transit_time || maxTT
+        const normTT = maxTT === minTT ? 100 : ((maxTT - tt) / (maxTT - minTT)) * 100
+        const etd = getEtdDays(q.etd)
+        const normETD = maxETD === minETD ? 100 : ((maxETD - etd) / (maxETD - minETD)) * 100
+        const ft = q.free_time || 0
+        const normFT = maxFT === minFT ? 100 : ((ft - minFT) / (maxFT - minFT)) * 100
+
+        return Math.round(normC * 0.4 + normTT * 0.3 + normETD * 0.2 + normFT * 0.1)
+      }
+
+      const newScore = calcScore(newQuotBase)
+
+      const updates = existingQuots.map((q) => {
+        const s = calcScore(q)
+        if (s !== q.score) {
+          return updateQuotation(q.id, { score: s })
+        }
+        return Promise.resolve()
       })
-      toast({ title: 'Sucesso', description: 'Cotação validada e salva com sucesso!' })
+
+      await Promise.all([
+        ...updates,
+        createQuotation({
+          user_id: user.id,
+          ...newQuotBase,
+          score: newScore,
+        }),
+      ])
+
+      toast({ title: 'Sucesso', description: 'Cotação salva e ranking processado!' })
       navigate('/ranking')
     } catch (error) {
       console.error(error)
@@ -406,15 +460,20 @@ export default function Review() {
                   <Button
                     type="submit"
                     size="lg"
-                    className="bg-blue-600 hover:bg-blue-700 text-white min-w-[200px]"
+                    className="bg-blue-600 hover:bg-blue-700 text-white min-w-[200px] transition-all"
                     disabled={!form.formState.isValid || isSubmitting}
                   >
                     {isSubmitting ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processando Score...
+                      </>
                     ) : (
-                      <Save className="mr-2 h-4 w-4" />
+                      <>
+                        <Save className="mr-2 h-4 w-4" />
+                        Confirmar Extração
+                      </>
                     )}
-                    Confirmar Extração
                   </Button>
                 </div>
               </form>
