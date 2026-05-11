@@ -5,7 +5,7 @@ routerAdd(
     const body = e.requestInfo().body || {}
     const base64Data = body.pdfBase64
     if (!base64Data) {
-      return e.badRequestError('Missing pdfBase64 in body')
+      return e.badRequestError('Arquivo PDF ausente na requisição.')
     }
 
     let url = $secrets.get('SKIP_AI_GATEWAY_URL') || ''
@@ -59,7 +59,13 @@ routerAdd(
       $app
         .logger()
         .error('AI extraction failed', 'status', res.statusCode, 'body', res.json || res.body)
-      return e.internalServerError('Failed to extract data from PDF')
+
+      if (res.statusCode === 400) {
+        return e.badRequestError('O PDF enviado é inválido, ilegível ou está corrompido.')
+      } else if (res.statusCode === 413) {
+        return e.badRequestError('O PDF excede o limite de tamanho permitido pela IA.')
+      }
+      return e.internalServerError('Falha na comunicação com o serviço de IA.')
     }
 
     let content = res.json?.choices?.[0]?.message?.content || '{}'
@@ -72,33 +78,60 @@ routerAdd(
       extracted = JSON.parse(content)
     } catch (err) {
       $app.logger().error('AI parse failed', 'content', content)
-      return e.internalServerError('Failed to parse AI response')
+      return e.badRequestError(
+        'Não foi possível interpretar os dados do PDF. Verifique se o formato está legível.',
+      )
     }
 
     const quotationsCol = $app.findCollectionByNameOrId('quotations')
     const quotation = new Record(quotationsCol)
 
-    quotation.set('agent_name', extracted.agent_name || 'Desconhecido')
+    if (extracted.agent_name) {
+      quotation.set('agent_name', extracted.agent_name)
+    }
 
     const validModals = ['Aéreo', 'FCL', 'LCL']
-    const modal = validModals.includes(extracted.modal) ? extracted.modal : 'FCL'
-    quotation.set('modal', modal)
-
-    quotation.set('cost', Number(extracted.cost) || 0)
-    quotation.set('transit_time', Number(extracted.transit_time) || 0)
-
-    let etd = extracted.etd
-    if (!etd || !/^\d{4}-\d{2}-\d{2}$/.test(etd)) {
-      etd = new Date().toISOString().replace('T', ' ')
-    } else {
-      etd = etd + ' 12:00:00.000Z'
+    if (extracted.modal && validModals.includes(extracted.modal)) {
+      quotation.set('modal', extracted.modal)
+    } else if (extracted.modal) {
+      quotation.set('modal', extracted.modal)
     }
-    quotation.set('etd', etd)
 
-    quotation.set('free_time', Number(extracted.free_time) || 0)
+    if (extracted.cost !== undefined && extracted.cost !== null) {
+      const costNum = Number(extracted.cost)
+      if (!Number.isNaN(costNum)) {
+        quotation.set('cost', costNum)
+      }
+    }
+
+    if (extracted.transit_time !== undefined && extracted.transit_time !== null) {
+      quotation.set('transit_time', Number(extracted.transit_time))
+    }
+
+    if (extracted.taxable_weight !== undefined && extracted.taxable_weight !== null) {
+      quotation.set('taxable_weight', Number(extracted.taxable_weight))
+    }
+
+    if (extracted.etd) {
+      let etd = extracted.etd
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(etd)) {
+        // Ignorar formato incorreto para deixar o validador atuar ou simplesmente não setar
+      } else {
+        etd = etd + ' 12:00:00.000Z'
+        quotation.set('etd', etd)
+      }
+    }
+
+    if (extracted.free_time !== undefined && extracted.free_time !== null) {
+      quotation.set('free_time', Number(extracted.free_time))
+    }
+
     quotation.set('score', 0)
     quotation.set('user_id', e.auth.id)
 
+    // O PocketBase validará o Record durante o save. Caso existam campos obrigatórios
+    // ausentes (ex: cost, agent_name, modal), ele automaticamente lançará
+    // um erro que será devolvido como 400 Bad Request contendo os dados do field.
     $app.save(quotation)
 
     const extractedCol = $app.findCollectionByNameOrId('extracted_data')
@@ -114,4 +147,5 @@ routerAdd(
     })
   },
   $apis.requireAuth(),
+  $apis.bodyLimit(10 * 1024 * 1024),
 )

@@ -7,10 +7,12 @@ import { Card } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
 import pb from '@/lib/pocketbase/client'
 import { Skeleton } from '@/components/ui/skeleton'
+import { getErrorMessage, extractFieldErrors } from '@/lib/pocketbase/errors'
 
 export default function Upload() {
   const [isDragging, setIsDragging] = useState(false)
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [errorMessage, setErrorMessage] = useState<string>('')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -26,10 +28,27 @@ export default function Upload() {
   }
 
   const processFile = async (file: File) => {
+    setErrorMessage('')
+
     if (file.type !== 'application/pdf') {
+      const msg = 'Por favor, selecione um arquivo PDF válido.'
+      setErrorMessage(msg)
+      setStatus('error')
       toast({
         title: 'Formato inválido',
-        description: 'Por favor, selecione um arquivo PDF.',
+        description: msg,
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      const msg = 'O arquivo é muito grande. O tamanho máximo permitido é 5MB.'
+      setErrorMessage(msg)
+      setStatus('error')
+      toast({
+        title: 'Arquivo muito grande',
+        description: msg,
         variant: 'destructive',
       })
       return
@@ -55,9 +74,33 @@ export default function Upload() {
       setTimeout(() => {
         navigate('/review')
       }, 2000)
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
       setStatus('error')
+
+      const fieldErrors = extractFieldErrors(err)
+      const hasFieldErrors = Object.keys(fieldErrors).length > 0
+
+      let msg = getErrorMessage(err)
+
+      if (hasFieldErrors) {
+        const errors = Object.entries(fieldErrors)
+          .map(([field, detail]) => `${field}: ${detail}`)
+          .join(', ')
+        msg = `Campos obrigatórios ausentes ou inválidos: ${errors}`
+      } else if (err.status === 413) {
+        msg = 'O arquivo excede o limite de tamanho suportado.'
+      } else if (err.status === 400 && err.message) {
+        msg = err.message
+      }
+
+      setErrorMessage(msg)
+
+      toast({
+        title: 'Erro na extração',
+        description: msg,
+        variant: 'destructive',
+      })
     }
   }
 
@@ -79,7 +122,7 @@ export default function Upload() {
       reader.readAsDataURL(file)
       reader.onload = () => {
         let encoded = reader.result as string
-        encoded = encoded.replace(/^data:application\/pdf;base64,/, '')
+        encoded = encoded.replace(/^data:.*?;base64,/, '')
         resolve(encoded)
       }
       reader.onerror = (error) => reject(error)
@@ -145,7 +188,7 @@ export default function Upload() {
           </div>
           <h3 className="text-2xl font-semibold mb-2 text-slate-800">Falha na Extração</h3>
           <p className="text-slate-500 mb-8 text-center max-w-md">
-            Ocorreu um erro ao processar o arquivo. Por favor, tente novamente.
+            {errorMessage || 'Ocorreu um erro ao processar o arquivo. Por favor, tente novamente.'}
           </p>
           <Button
             onClick={() => setStatus('idle')}
@@ -208,7 +251,7 @@ export default function Upload() {
           <div className="text-sm space-y-2">
             <p className="font-semibold text-blue-900 text-base">Instruções para Upload:</p>
             <ul className="list-disc pl-5 space-y-1.5 text-blue-800/80">
-              <li>Apenas arquivos PDF são aceitos no momento.</li>
+              <li>Apenas arquivos PDF são aceitos no momento (máximo 5MB).</li>
               <li>
                 A Inteligência Artificial extrairá automaticamente: Nome do Agente, Modalidade
                 (Aéreo/FCL/LCL), Frete Base, Transit Time e ETD.
