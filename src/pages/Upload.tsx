@@ -101,6 +101,23 @@ export default function Upload() {
 
   const processFile = async (file: File) => {
     setErrorMessage('')
+
+    if (!user || !user.id) {
+      const msg = 'Usuário não autenticado. Por favor, faça login novamente.'
+      setErrorMessage(msg)
+      setStatus('error')
+      toast({ title: 'Erro de Autenticação', description: msg, variant: 'destructive' })
+      return
+    }
+
+    if (wizardStep > 1 && !pedidoId) {
+      const msg = 'Referência do pedido não encontrada. Volte à etapa 1.'
+      setErrorMessage(msg)
+      setStatus('error')
+      toast({ title: 'Erro de Fluxo', description: msg, variant: 'destructive' })
+      return
+    }
+
     if (file.type !== 'application/pdf') {
       const msg = 'Selecione um arquivo PDF válido.'
       setErrorMessage(msg)
@@ -123,9 +140,20 @@ export default function Upload() {
       const base64Data = await toBase64(file)
       const docType = wizardStep === 1 ? 'pedido' : wizardStep === 2 ? 'cota1' : 'cota2'
 
+      const payload: Record<string, any> = {
+        pdfBase64: base64Data,
+        docType,
+        userId: user.id,
+        step: wizardStep,
+      }
+
+      if (pedidoId) {
+        payload.pedidoId = pedidoId
+      }
+
       const res = await pb.send('/backend/v1/extract-pdf', {
         method: 'POST',
-        body: JSON.stringify({ pdfBase64: base64Data, docType }),
+        body: JSON.stringify(payload),
         headers: { 'Content-Type': 'application/json' },
       })
 
@@ -167,12 +195,32 @@ export default function Upload() {
         navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote } })
       }
     } catch (err: any) {
-      console.error(err)
+      console.error('Extraction error:', err)
       setStatus('error')
-      setErrorMessage(getErrorMessage(err))
+
+      let errorMsg =
+        'Não foi possível processar o arquivo. Verifique sua conexão e tente novamente.'
+
+      if (err.status === 400) {
+        errorMsg =
+          'Os dados do arquivo ou parâmetros enviados estão inválidos. Verifique o documento e tente novamente.'
+      } else if (err.status === 413) {
+        errorMsg = 'O arquivo é muito grande para ser processado.'
+      } else if (err.status >= 500) {
+        errorMsg = 'Erro interno do servidor. Tente novamente mais tarde.'
+      } else if (err.isAbort) {
+        errorMsg = 'A requisição foi cancelada (tempo limite). Verifique sua conexão.'
+      } else {
+        const apiMsg = getErrorMessage(err)
+        if (apiMsg && apiMsg !== 'An unexpected error occurred.') {
+          errorMsg = apiMsg
+        }
+      }
+
+      setErrorMessage(errorMsg)
       toast({
-        title: 'Erro na extração',
-        description: getErrorMessage(err),
+        title: 'Falha no Processamento',
+        description: errorMsg,
         variant: 'destructive',
       })
     }
