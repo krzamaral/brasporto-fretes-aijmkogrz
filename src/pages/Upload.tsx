@@ -59,10 +59,70 @@ export default function Upload() {
     try {
       const base64Data = await toBase64(file)
 
-      await pb.send('/backend/v1/extract-pdf', {
+      const res = await pb.send('/backend/v1/extract-pdf', {
         method: 'POST',
         body: JSON.stringify({ pdfBase64: base64Data }),
         headers: { 'Content-Type': 'application/json' },
+      })
+
+      let extracted = res.data || res
+      if (typeof extracted === 'string') {
+        try {
+          extracted = JSON.parse(extracted)
+        } catch {
+          /* intentionally ignored */
+        }
+      }
+
+      const userId = pb.authStore.record?.id
+      if (!userId) {
+        throw new Error('Usuário não autenticado. Por favor, faça login novamente.')
+      }
+
+      const parseNumber = (val: any): number | null => {
+        if (val === undefined || val === null || val === '') return null
+        const num = Number(val)
+        return isNaN(num) ? null : num
+      }
+
+      let etd = null
+      if (extracted.etd) {
+        const parsedDate = new Date(extracted.etd)
+        if (!isNaN(parsedDate.getTime())) {
+          etd = parsedDate.toISOString()
+        }
+      }
+
+      const cost = parseNumber(extracted.cost)
+
+      const payload: Record<string, any> = {
+        agent_name: extracted.agent_name
+          ? String(extracted.agent_name).trim()
+          : 'Agente Desconhecido',
+        modal: ['Aéreo', 'FCL', 'LCL'].includes(extracted.modal) ? extracted.modal : 'Aéreo',
+        cost: cost !== null ? cost : 0,
+        user_id: userId,
+      }
+
+      const transitTime = parseNumber(extracted.transit_time)
+      if (transitTime !== null) payload.transit_time = transitTime
+
+      if (etd) payload.etd = etd
+
+      const freeTime = parseNumber(extracted.free_time)
+      if (freeTime !== null) payload.free_time = freeTime
+
+      const taxableWeight = parseNumber(extracted.taxable_weight)
+      if (taxableWeight !== null) payload.taxable_weight = taxableWeight
+
+      const score = parseNumber(extracted.score)
+      if (score !== null) payload.score = score
+
+      const quotation = await pb.collection('quotations').create(payload)
+
+      await pb.collection('extracted_data').create({
+        quotation_id: quotation.id,
+        raw_data: extracted,
       })
 
       setStatus('success')
