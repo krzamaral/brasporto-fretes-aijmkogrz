@@ -16,6 +16,7 @@ import { useAuth } from '@/hooks/use-auth'
 
 export default function Login() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
@@ -25,28 +26,23 @@ export default function Login() {
     e.preventDefault()
     setError('')
 
-    if (!email) {
-      setError('O e-mail é obrigatório.')
-      return
-    }
-
-    if (!email.endsWith('@brasporto.com')) {
-      setError('Por favor, utilize um e-mail corporativo @brasporto.com')
+    if (!email || !password) {
+      setError('E-mail e senha são obrigatórios.')
       return
     }
 
     setIsLoading(true)
 
-    const result = await signIn(email)
+    const result = await signIn(email, password)
 
     if (result.error) {
-      setError(result.error.message || 'Erro ao enviar link de acesso. Tente novamente.')
+      setError('E-mail ou senha inválidos. Tente novamente.')
       setIsLoading(false)
     } else {
       setTimeout(() => {
         setIsLoading(false)
         navigate('/dashboard')
-      }, 800)
+      }, 500)
     }
   }
 
@@ -72,7 +68,7 @@ export default function Login() {
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm font-semibold text-slate-700">
-                  E-mail Corporativo
+                  E-mail
                 </Label>
                 <Input
                   id="email"
@@ -83,12 +79,26 @@ export default function Login() {
                   className={`h-12 text-base transition-all ${error ? 'border-destructive focus-visible:ring-destructive' : 'focus-visible:ring-accent'}`}
                   autoComplete="email"
                 />
-                {error && (
-                  <p className="text-sm font-medium text-destructive mt-1 animate-fade-in">
-                    {error}
-                  </p>
-                )}
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-semibold text-slate-700">
+                  Senha
+                </Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={`h-12 text-base transition-all ${error ? 'border-destructive focus-visible:ring-destructive' : 'focus-visible:ring-accent'}`}
+                  autoComplete="current-password"
+                />
+              </div>
+
+              {error && (
+                <p className="text-sm font-medium text-destructive mt-1 animate-fade-in">{error}</p>
+              )}
 
               <Button
                 type="submit"
@@ -98,11 +108,11 @@ export default function Login() {
                 {isLoading ? (
                   <span className="flex items-center gap-2">
                     <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Enviando Magic Link...
+                    Autenticando...
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
-                    Receber Link de Acesso
+                    Entrar
                     <ArrowRight className="h-4 w-4" />
                   </span>
                 )}

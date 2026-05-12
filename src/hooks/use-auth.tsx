@@ -3,7 +3,7 @@ import pb from '@/lib/pocketbase/client'
 
 interface AuthContextType {
   user: any
-  signIn: (email: string) => Promise<{ error: any }>
+  signIn: (email: string, password: string) => Promise<{ error: any }>
   signOut: () => void
   loading: boolean
 }
@@ -30,27 +30,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [])
 
-  const signIn = async (email: string) => {
-    if (!email.endsWith('@brasporto.com')) {
-      return { error: new Error('Por favor, utilize um e-mail corporativo @brasporto.com') }
-    }
-
+  const signIn = async (email: string, password: string) => {
     try {
-      await pb.collection('users').authWithPassword(email, 'Skip@Pass')
+      await pb.collection('users').authWithPassword(email, password)
       return { error: null }
     } catch (error) {
-      try {
-        await pb.collection('users').create({
-          email,
-          password: 'Skip@Pass',
-          passwordConfirm: 'Skip@Pass',
-          name: email.split('@')[0],
-        })
-        await pb.collection('users').authWithPassword(email, 'Skip@Pass')
-        return { error: null }
-      } catch (err) {
-        return { error: err }
-      }
+      return { error }
     }
   }
 
