@@ -1,87 +1,173 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ArrowLeft, Trophy, Medal, Award, Sparkles, FileDown } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import {
+  ArrowLeft,
+  Trophy,
+  Medal,
+  Award,
+  Sparkles,
+  FileDown,
+  CheckCircle2,
+  XCircle,
+} from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { useRealtime } from '@/hooks/use-realtime'
-import { getQuotations, type Quotation } from '@/services/quotations'
+import { getQuotationsByPedido, type Quotation } from '@/services/quotations'
+import { getPedido, type Pedido } from '@/services/pedidos'
 import { cn } from '@/lib/utils'
 
 export default function Ranking() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [quotations, setQuotations] = useState<Quotation[]>([])
-
-  const loadData = async () => {
-    try {
-      const data = await getQuotations()
-      const sorted = [...data].sort((a, b) => (b.score || 0) - (a.score || 0) || a.cost - b.cost)
-      setQuotations(sorted)
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
-  const generateJustification = (q: Quotation, all: Quotation[]) => {
-    if (all.length === 0) return ''
-    const isBestCost = Math.min(...all.map((x) => x.cost)) === q.cost
-    const minTT = Math.min(...all.map((x) => x.transit_time || 999))
-    const isBestTT = minTT !== 999 && minTT === (q.transit_time || 999)
-    const maxFT = Math.max(...all.map((x) => x.free_time || 0))
-    const isBestFT = maxFT > 0 && maxFT === (q.free_time || 0)
-
-    const factors = []
-    if (isBestCost) factors.push(`melhor custo (US$ ${q.cost.toFixed(2)})`)
-    if (isBestTT && q.transit_time) factors.push(`menor prazo (${q.transit_time} dias)`)
-    if (isBestFT && q.free_time) factors.push(`maior free time (${q.free_time} dias)`)
-
-    if (factors.length > 0) {
-      return `Recomendada por: ${factors.join(', ')}.`
-    }
-    return `Opção balanceada considerando custo-benefício e prazo de entrega.`
-  }
+  const [pedido, setPedido] = useState<Pedido | null>(null)
 
   useEffect(() => {
+    async function loadData() {
+      const pedidoId = location.state?.pedidoId
+      if (!pedidoId) {
+        navigate('/dashboard')
+        return
+      }
+      try {
+        const [ped, quots] = await Promise.all([
+          getPedido(pedidoId),
+          getQuotationsByPedido(pedidoId),
+        ])
+        setPedido(ped)
+        setQuotations(quots)
+      } catch (e) {
+        console.error(e)
+      }
+    }
     loadData()
-  }, [])
+  }, [location, navigate])
 
-  useRealtime('quotations', () => {
-    loadData()
-  })
+  const generateJustification = (q: Quotation, ped: Pedido) => {
+    return `Melhor opção para o pedido ${ped.origem} - ${ped.destino}. Atende o prazo de ${q.transit_time || '-'} dias com custo de US$ ${q.cost.toFixed(2)}.`
+  }
 
-  return (
-    <div className="space-y-6 animate-fade-in print:space-y-4 print:m-0">
-      <style>{`
-        @media print {
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          @page { margin: 1cm; }
-        }
-      `}</style>
+  const cota1List = quotations.filter((q) => q.expand?.cotacao_round_id?.nome_round === 'cota1')
+  const cota2List = quotations.filter((q) => q.expand?.cotacao_round_id?.nome_round === 'cota2')
 
-      {/* Print Header */}
-      <div className="hidden print:flex items-center justify-between mb-8 border-b pb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-            B
-          </div>
-          <h1 className="text-2xl font-bold text-slate-800">Brasporto Fretes</h1>
-        </div>
-        <div className="text-right">
-          <h2 className="text-xl font-semibold text-slate-700">Relatório de Ranking de Cotações</h2>
-          <p className="text-sm text-slate-500">Decisão Estratégica de Frete</p>
+  const renderList = (list: Quotation[], title: string) => {
+    if (list.length === 0) return null
+    return (
+      <div className="mb-10 last:mb-0">
+        <h3 className="text-lg font-semibold text-slate-800 mb-4 pb-2 border-b border-slate-100">
+          {title}
+        </h3>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {list.map((q) => {
+            const isWinner = quotations.length > 0 && q.id === quotations[0].id
+            const meetsDeadline = (q.transit_time || 0) <= (pedido?.prazo_desejado_dias || 999)
+
+            return (
+              <Card
+                key={q.id}
+                className={cn(
+                  'p-6 relative overflow-hidden transition-all',
+                  isWinner
+                    ? 'border-amber-300 shadow-amber-100/50 shadow-lg scale-[1.02] z-10'
+                    : 'border-slate-200',
+                )}
+              >
+                {isWinner && <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-400" />}
+                <div className="flex justify-between items-start mb-4">
+                  <div className="flex items-center gap-3 pr-2">
+                    {isWinner ? (
+                      <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                        <Trophy className="h-5 w-5" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                        <Medal className="h-5 w-5" />
+                      </div>
+                    )}
+                    <div>
+                      <h4
+                        className="font-bold text-slate-800 truncate max-w-[140px]"
+                        title={q.agent_name}
+                      >
+                        {q.agent_name}
+                      </h4>
+                      <p className="text-xs text-slate-500">{q.modal}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-slate-800">{q.score}</div>
+                    <div className="text-[10px] text-slate-500 uppercase">Score Global</div>
+                  </div>
+                </div>
+
+                {isWinner && pedido && (
+                  <div className="mb-4 bg-amber-50/50 rounded-lg p-3 border border-amber-100 flex gap-2 items-start">
+                    <Sparkles className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                    <p className="text-xs text-amber-900 leading-tight">
+                      {generateJustification(q, pedido)}
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
+                    <span className="text-slate-500">Custo Total</span>
+                    <span className="font-semibold text-slate-800">US$ {q.cost.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
+                    <span className="text-slate-500">Transit Time</span>
+                    <span className="font-medium text-slate-800 flex items-center gap-1">
+                      {q.transit_time} dias
+                      {meetsDeadline ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                      ) : (
+                        <XCircle className="h-3.5 w-3.5 text-red-500" />
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
+                    <span className="text-slate-500">Free Time</span>
+                    <span className="font-medium text-slate-800">{q.free_time || 0} dias</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
+                    <span className="text-slate-500">Score Compatibilidade</span>
+                    <span className="font-semibold text-blue-600">
+                      {q.compatibilidade_score || 0} pts
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-5 print:hidden">
+                  <Button
+                    className={cn(
+                      'w-full',
+                      isWinner
+                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-800',
+                    )}
+                  >
+                    Aprovar Fornecedor
+                  </Button>
+                </div>
+              </Card>
+            )
+          })}
         </div>
       </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in print:m-0 print:space-y-4">
+      <style>{`@media print { * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; } @page { margin: 1cm; } }`}</style>
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 print:hidden gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight mb-1 text-slate-800">
+          <h2 className="text-2xl font-bold tracking-tight text-slate-800">
             Ranking de Fornecedores
           </h2>
-          <p className="text-muted-foreground">
-            Análise comparativa para decisão estratégica de frete.
-          </p>
+          <p className="text-muted-foreground">Decisão Estratégica de Frete</p>
         </div>
         <div className="flex items-center gap-3">
           <Button
@@ -89,142 +175,39 @@ export default function Ranking() {
             variant="outline"
             className="flex items-center gap-2"
           >
-            <FileDown className="h-4 w-4" />
-            Baixar PDF
+            <FileDown className="h-4 w-4" /> Baixar PDF
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link to="/review" className="flex items-center gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Voltar
+            <Link to="/dashboard" className="flex items-center gap-2">
+              <ArrowLeft className="h-4 w-4" /> Voltar
             </Link>
           </Button>
         </div>
       </div>
 
       <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm print:shadow-none print:border-none print:p-0">
-        <Stepper currentStep={3} />
+        <Stepper currentStep={5} />
 
-        <div className="mt-12">
-          <div className="grid gap-6 md:grid-cols-3">
-            {quotations.slice(0, 3).map((q, index) => {
-              const isTop = index === 0
-              const isSecond = index === 1
-              const isThird = index === 2
-
-              return (
-                <Card
-                  key={q.id}
-                  className={cn(
-                    'p-6 relative overflow-hidden transition-all',
-                    isTop
-                      ? 'border-amber-300 shadow-amber-100/50 shadow-lg scale-105 z-10'
-                      : 'border-slate-200',
-                  )}
-                >
-                  {isTop && <div className="absolute top-0 left-0 w-full h-1 bg-amber-400" />}
-                  <div className="flex justify-between items-start mb-6">
-                    <div className="flex items-center gap-3 overflow-hidden pr-2">
-                      <div
-                        className={cn(
-                          'flex items-center justify-center w-10 h-10 rounded-full shrink-0',
-                          isTop
-                            ? 'bg-amber-100 text-amber-600'
-                            : isSecond
-                              ? 'bg-slate-100 text-slate-600'
-                              : isThird
-                                ? 'bg-orange-100 text-orange-600'
-                                : 'bg-slate-50 text-slate-400',
-                        )}
-                      >
-                        {isTop ? (
-                          <Trophy className="h-5 w-5" />
-                        ) : isSecond ? (
-                          <Medal className="h-5 w-5" />
-                        ) : isThird ? (
-                          <Award className="h-5 w-5" />
-                        ) : (
-                          <span className="font-bold">{index + 1}º</span>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-slate-800 truncate" title={q.agent_name}>
-                          {q.agent_name}
-                        </h4>
-                        <p className="text-xs text-slate-500 font-medium">{q.modal}</p>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-2xl font-bold text-slate-800">{q.score || 0}</div>
-                      <div className="text-xs text-slate-500 uppercase tracking-wider">Score</div>
-                    </div>
-                  </div>
-
-                  {index < 3 && (
-                    <div className="mb-4 bg-blue-50/50 rounded-lg p-3 border border-blue-100 flex gap-2 items-start">
-                      <Sparkles className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-                      <p className="text-sm text-slate-700 leading-tight">
-                        {generateJustification(q, quotations)}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                      <span className="text-sm text-slate-500">Custo Total</span>
-                      <span className="font-semibold text-slate-800">US$ {q.cost.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                      <span className="text-sm text-slate-500">Transit Time</span>
-                      <span className="font-semibold text-slate-800">{q.transit_time} dias</span>
-                    </div>
-                    <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                      <span className="text-sm text-slate-500">Free Time</span>
-                      <span className="font-semibold text-slate-800">{q.free_time || 0} dias</span>
-                    </div>
-                    {q.etd && (
-                      <div className="flex justify-between items-center py-2 border-b border-slate-100">
-                        <span className="text-sm text-slate-500">ETD</span>
-                        <span className="font-semibold text-slate-800">
-                          {new Date(q.etd).toLocaleDateString('pt-BR')}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="mt-6 print:hidden">
-                    <Button
-                      className={cn(
-                        'w-full',
-                        isTop
-                          ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                          : 'bg-slate-100 hover:bg-slate-200 text-slate-800',
-                      )}
-                    >
-                      Selecionar
-                    </Button>
-                  </div>
-                </Card>
-              )
-            })}
+        {pedido && (
+          <div className="mt-8 mb-8 text-center">
+            <h2 className="text-xl font-bold text-slate-800 mb-1">
+              {pedido.origem}{' '}
+              <ArrowLeft className="inline h-4 w-4 rotate-180 text-slate-400 mx-1" />{' '}
+              {pedido.destino}
+            </h2>
+            <p className="text-slate-500">
+              Modal: {pedido.modal_desejado} | Prazo Alvo: {pedido.prazo_desejado_dias} dias
+            </p>
           </div>
-          {quotations.length === 0 && (
-            <div className="text-center py-12 text-slate-500">
-              Nenhuma cotação disponível para ranking.
-            </div>
-          )}
-        </div>
+        )}
+
+        {renderList(cota1List, 'Opções - Cotação 1')}
+        {renderList(cota2List, 'Opções - Cotação 2')}
+
+        {quotations.length === 0 && (
+          <div className="text-center py-12 text-slate-500">Nenhuma cotação disponível.</div>
+        )}
       </Card>
-
-      <div className="flex justify-between mt-6 print:hidden">
-        <Button asChild variant="ghost">
-          <Link to="/dashboard">Voltar ao Início</Link>
-        </Button>
-      </div>
-
-      {/* Print Footer */}
-      <div className="hidden print:block mt-12 pt-4 border-t text-center text-sm text-slate-500">
-        Gerado em {new Date().toLocaleString('pt-BR')}
-      </div>
     </div>
   )
 }

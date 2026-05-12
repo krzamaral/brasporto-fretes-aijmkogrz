@@ -5,7 +5,7 @@ interface StepperProps {
   currentStep: number
 }
 
-const STEPS = ['Solicitação', 'Conferência', 'Cotações', 'Validação', 'Decisão']
+const STEPS = ['Pedido', 'Cotação 1', 'Cotação 2', 'Revisão', 'Decisão']
 
 export function Stepper({ currentStep }: StepperProps) {
   return (

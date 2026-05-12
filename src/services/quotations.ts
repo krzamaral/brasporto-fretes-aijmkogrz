@@ -10,6 +10,9 @@ export interface Quotation {
   free_time?: number
   taxable_weight?: number
   score: number
+  compatibilidade_score?: number
+  cotacao_round_id?: string
+  pedido_id?: string
   user_id: string
   created: string
   updated: string
@@ -18,19 +21,32 @@ export interface Quotation {
       name: string
       email: string
     }
+    cotacao_round_id?: {
+      id: string
+      nome_round: string
+    }
   }
 }
 
 export const getQuotations = () =>
-  pb.collection('quotations').getFullList<Quotation>({ sort: '-created', expand: 'user_id' })
+  pb
+    .collection('quotations')
+    .getFullList<Quotation>({ sort: '-created', expand: 'user_id,cotacao_round_id' })
+
+export const getQuotationsByPedido = (pedidoId: string) =>
+  pb.collection('quotations').getFullList<Quotation>({
+    filter: `pedido_id='${pedidoId}'`,
+    sort: '-score',
+    expand: 'user_id,cotacao_round_id',
+  })
 
 export const getHistoryQuotations = () => {
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const dateStr = thirtyDaysAgo.toISOString().replace('T', ' ').substring(0, 19)
   return pb.collection('quotations').getFullList<Quotation>({
-    filter: `updated >= '${dateStr}'`,
-    sort: '-updated',
+    filter: `updated >= '${dateStr}' && pedido_id != ''`,
+    sort: '-score',
     expand: 'user_id',
   })
 }

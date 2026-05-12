@@ -1,21 +1,85 @@
 import { useState, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, FileText, Info, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import {
+  ArrowLeft,
+  FileText,
+  Info,
+  AlertCircle,
+  RefreshCw,
+  UploadCloud,
+  ChevronRight,
+} from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form'
 import { useToast } from '@/hooks/use-toast'
 import pb from '@/lib/pocketbase/client'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getErrorMessage, extractFieldErrors } from '@/lib/pocketbase/errors'
+import { getErrorMessage } from '@/lib/pocketbase/errors'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import * as z from 'zod'
+import { createPedido } from '@/services/pedidos'
+import { useAuth } from '@/hooks/use-auth'
+
+const pedidoSchema = z.object({
+  origem: z.string().min(1, 'Obrigatório'),
+  destino: z.string().min(1, 'Obrigatório'),
+  peso_bruto: z.number({ invalid_type_error: 'Obrigatório' }).min(0.1, 'Deve ser > 0'),
+  volume: z.number().optional().nullable(),
+  tipo_mercadoria: z.string().optional(),
+  modal_desejado: z.enum(['Aéreo', 'FCL', 'LCL']),
+  prazo_desejado_dias: z.number({ invalid_type_error: 'Obrigatório' }).min(1, 'Deve ser > 0'),
+})
+
+type PedidoFormValues = z.infer<typeof pedidoSchema>
 
 export default function Upload() {
+  const location = useLocation()
+  const initialPedidoId = location.state?.pedidoId
+
+  const [wizardStep, setWizardStep] = useState(initialPedidoId ? 2 : 1)
+  const [pedidoId, setPedidoId] = useState<string | null>(initialPedidoId || null)
+
   const [isDragging, setIsDragging] = useState(false)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'form' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState<string>('')
+
+  const [cota1Quotes, setCota1Quotes] = useState<any[]>([])
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const navigate = useNavigate()
+  const { user } = useAuth()
+
+  const form = useForm<PedidoFormValues>({
+    resolver: zodResolver(pedidoSchema),
+    defaultValues: {
+      origem: '',
+      destino: '',
+      peso_bruto: 0,
+      volume: null,
+      tipo_mercadoria: '',
+      modal_desejado: 'Aéreo',
+      prazo_desejado_dias: 30,
+    },
+  })
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault()
@@ -27,30 +91,29 @@ export default function Upload() {
     setIsDragging(false)
   }
 
+  const toBase64 = (file: File) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => resolve((reader.result as string).replace(/^data:.*?;base64,/, ''))
+      reader.onerror = (error) => reject(error)
+    })
+
   const processFile = async (file: File) => {
     setErrorMessage('')
-
     if (file.type !== 'application/pdf') {
-      const msg = 'Por favor, selecione um arquivo PDF válido.'
+      const msg = 'Selecione um arquivo PDF válido.'
       setErrorMessage(msg)
       setStatus('error')
-      toast({
-        title: 'Formato inválido',
-        description: msg,
-        variant: 'destructive',
-      })
+      toast({ title: 'Formato inválido', description: msg, variant: 'destructive' })
       return
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      const msg = 'O arquivo é muito grande. O tamanho máximo permitido é 5MB.'
+      const msg = 'Tamanho máximo permitido é 5MB.'
       setErrorMessage(msg)
       setStatus('error')
-      toast({
-        title: 'Arquivo muito grande',
-        description: msg,
-        variant: 'destructive',
-      })
+      toast({ title: 'Arquivo muito grande', description: msg, variant: 'destructive' })
       return
     }
 
@@ -58,107 +121,58 @@ export default function Upload() {
 
     try {
       const base64Data = await toBase64(file)
+      const docType = wizardStep === 1 ? 'pedido' : wizardStep === 2 ? 'cota1' : 'cota2'
 
       const res = await pb.send('/backend/v1/extract-pdf', {
         method: 'POST',
-        body: JSON.stringify({ pdfBase64: base64Data }),
+        body: JSON.stringify({ pdfBase64: base64Data, docType }),
         headers: { 'Content-Type': 'application/json' },
       })
 
-      let extracted = res.data || res
-      if (typeof extracted === 'string') {
-        try {
-          extracted = JSON.parse(extracted)
-        } catch {
-          /* intentionally ignored */
+      const extracted = res.data?.data || res.data
+
+      if (wizardStep === 1) {
+        form.reset({
+          origem: extracted.origem || '',
+          destino: extracted.destino || '',
+          peso_bruto: Number(extracted.peso_bruto) || 0,
+          volume: Number(extracted.volume) || null,
+          tipo_mercadoria: extracted.tipo_mercadoria || '',
+          modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted.modal_desejado)
+            ? extracted.modal_desejado
+            : 'Aéreo',
+          prazo_desejado_dias: Number(extracted.prazo_desejado_dias) || 30,
+        })
+        setStatus('form')
+        toast({ title: 'Dados extraídos', description: 'Revise os dados do pedido abaixo.' })
+      } else if (wizardStep === 2) {
+        if (extracted.type === 'multiple' && Array.isArray(extracted.quotations)) {
+          setCota1Quotes(extracted.quotations)
+        } else if (extracted.type === 'single') {
+          setCota1Quotes([extracted.data])
+        } else {
+          setCota1Quotes(Array.isArray(extracted) ? extracted : [extracted])
         }
+        setStatus('idle')
+        setWizardStep(3)
+        toast({ title: 'Cotações Extraídas', description: 'Rodada 1 concluída. Envie a Rodada 2.' })
+      } else if (wizardStep === 3) {
+        const cota2Quote =
+          extracted.type === 'single'
+            ? extracted.data
+            : Array.isArray(extracted.quotations)
+              ? extracted.quotations[0]
+              : extracted
+        toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
+        navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote } })
       }
-
-      const userId = pb.authStore.record?.id
-      if (!userId) {
-        throw new Error('Usuário não autenticado. Por favor, faça login novamente.')
-      }
-
-      const parseNumber = (val: any): number | null => {
-        if (val === undefined || val === null || val === '') return null
-        const num = Number(val)
-        return isNaN(num) ? null : num
-      }
-
-      let etd = null
-      if (extracted.etd) {
-        const parsedDate = new Date(extracted.etd)
-        if (!isNaN(parsedDate.getTime())) {
-          etd = parsedDate.toISOString()
-        }
-      }
-
-      const cost = parseNumber(extracted.cost)
-
-      const payload: Record<string, any> = {
-        agent_name: extracted.agent_name
-          ? String(extracted.agent_name).trim()
-          : 'Agente Desconhecido',
-        modal: ['Aéreo', 'FCL', 'LCL'].includes(extracted.modal) ? extracted.modal : 'Aéreo',
-        cost: cost !== null ? cost : 0,
-        user_id: userId,
-      }
-
-      const transitTime = parseNumber(extracted.transit_time)
-      if (transitTime !== null) payload.transit_time = transitTime
-
-      if (etd) payload.etd = etd
-
-      const freeTime = parseNumber(extracted.free_time)
-      if (freeTime !== null) payload.free_time = freeTime
-
-      const taxableWeight = parseNumber(extracted.taxable_weight)
-      if (taxableWeight !== null) payload.taxable_weight = taxableWeight
-
-      const score = parseNumber(extracted.score)
-      if (score !== null) payload.score = score
-
-      const quotation = await pb.collection('quotations').create(payload)
-
-      await pb.collection('extracted_data').create({
-        quotation_id: quotation.id,
-        raw_data: extracted,
-      })
-
-      setStatus('success')
-      toast({
-        title: 'Sucesso',
-        description: 'Dados extraídos com sucesso!',
-      })
-
-      setTimeout(() => {
-        navigate('/review')
-      }, 2000)
     } catch (err: any) {
       console.error(err)
       setStatus('error')
-
-      const fieldErrors = extractFieldErrors(err)
-      const hasFieldErrors = Object.keys(fieldErrors).length > 0
-
-      let msg = getErrorMessage(err)
-
-      if (hasFieldErrors) {
-        const errors = Object.entries(fieldErrors)
-          .map(([field, detail]) => `${field}: ${detail}`)
-          .join(', ')
-        msg = `Campos obrigatórios ausentes ou inválidos: ${errors}`
-      } else if (err.status === 413) {
-        msg = 'O arquivo excede o limite de tamanho suportado.'
-      } else if (err.status === 400 && err.message) {
-        msg = err.message
-      }
-
-      setErrorMessage(msg)
-
+      setErrorMessage(getErrorMessage(err))
       toast({
         title: 'Erro na extração',
-        description: msg,
+        description: getErrorMessage(err),
         variant: 'destructive',
       })
     }
@@ -176,17 +190,34 @@ export default function Upload() {
     if (file) processFile(file)
   }
 
-  const toBase64 = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = () => {
-        let encoded = reader.result as string
-        encoded = encoded.replace(/^data:.*?;base64,/, '')
-        resolve(encoded)
-      }
-      reader.onerror = (error) => reject(error)
-    })
+  const onPedidoSubmit = async (data: PedidoFormValues) => {
+    if (!user) return
+    try {
+      const pedido = await createPedido({
+        ...data,
+        volume: data.volume || undefined,
+        user_id: user.id,
+        status: 'aguardando_cotacao',
+      })
+      setPedidoId(pedido.id)
+      setWizardStep(2)
+      setStatus('idle')
+      toast({
+        title: 'Pedido criado',
+        description: 'Agora envie o documento da primeira rodada de cotação.',
+      })
+    } catch (e) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível salvar o pedido.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const handleSkipCota2 = () => {
+    navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote: null } })
+  }
 
   const renderContent = () => {
     if (status === 'loading') {
@@ -194,9 +225,7 @@ export default function Upload() {
         <div className="mt-12 max-w-3xl mx-auto space-y-8 animate-fade-in-up">
           <div className="text-center space-y-2">
             <h3 className="text-xl font-semibold text-slate-800">Analisando documento...</h3>
-            <p className="text-slate-500">
-              A inteligência artificial está extraindo os dados da cotação.
-            </p>
+            <p className="text-slate-500">A IA está extraindo os dados relevantes.</p>
           </div>
           <Card className="p-8 space-y-8 border-slate-200">
             <div className="space-y-3">
@@ -213,29 +242,146 @@ export default function Upload() {
                 <Skeleton className="h-12 w-full bg-slate-100" />
               </div>
             </div>
-            <div className="space-y-3">
-              <Skeleton className="h-4 w-[140px] bg-slate-200" />
-              <Skeleton className="h-12 w-full bg-slate-100" />
-            </div>
           </Card>
         </div>
       )
     }
 
-    if (status === 'success') {
+    if (status === 'form' && wizardStep === 1) {
       return (
-        <div className="mt-12 max-w-3xl mx-auto flex flex-col items-center justify-center py-16 animate-fade-in-up">
-          <div className="h-24 w-24 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-6 shadow-sm">
-            <CheckCircle2 className="h-12 w-12" />
+        <div className="mt-12 max-w-3xl mx-auto animate-fade-in-up">
+          <div className="mb-6">
+            <h3 className="text-xl font-semibold text-slate-800">Revise os dados do Pedido</h3>
+            <p className="text-slate-500 text-sm">
+              Confirme ou altere os dados extraídos antes de prosseguir.
+            </p>
           </div>
-          <h3 className="text-2xl font-semibold mb-2 text-slate-800">Processamento Concluído</h3>
-          <p className="text-slate-500 mb-8 text-center max-w-md">
-            Os dados foram extraídos com sucesso. Você será redirecionado para a conferência em
-            instantes.
-          </p>
-          <Button onClick={() => navigate('/review')} className="bg-primary hover:bg-primary/90">
-            Ir para Conferência Agora
-          </Button>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onPedidoSubmit)} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <FormField
+                  control={form.control}
+                  name="origem"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Origem</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="destino"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Destino</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="peso_bruto"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Peso Bruto (kg)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          {...field}
+                          onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="volume"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Volume (m³)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          {...field}
+                          value={field.value || ''}
+                          onChange={(e) => field.onChange(parseFloat(e.target.value) || null)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="tipo_mercadoria"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Tipo de Mercadoria</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="modal_desejado"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Modal Desejado</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Aéreo">Aéreo</SelectItem>
+                          <SelectItem value="FCL">FCL</SelectItem>
+                          <SelectItem value="LCL">LCL</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="prazo_desejado_dias"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Prazo Desejado (dias)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          {...field}
+                          onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <div className="flex justify-end pt-4">
+                <Button type="submit" className="bg-primary hover:bg-primary/90">
+                  Salvar Pedido e Avançar <ChevronRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </form>
+          </Form>
         </div>
       )
     }
@@ -248,15 +394,14 @@ export default function Upload() {
           </div>
           <h3 className="text-2xl font-semibold mb-2 text-slate-800">Falha na Extração</h3>
           <p className="text-slate-500 mb-8 text-center max-w-md">
-            {errorMessage || 'Ocorreu um erro ao processar o arquivo. Por favor, tente novamente.'}
+            {errorMessage || 'Ocorreu um erro ao processar o arquivo.'}
           </p>
           <Button
             onClick={() => setStatus('idle')}
             variant="outline"
-            className="flex items-center gap-2 border-slate-300 text-slate-700 hover:bg-slate-50"
+            className="flex items-center gap-2"
           >
-            <RefreshCw className="h-4 w-4" />
-            Tentar Novamente
+            <RefreshCw className="h-4 w-4" /> Tentar Novamente
           </Button>
         </div>
       )
@@ -289,14 +434,21 @@ export default function Upload() {
                 : 'bg-slate-100 group-hover:bg-primary/10 text-slate-500 group-hover:text-primary'
             }`}
           >
-            <FileText className="h-10 w-10" />
+            {wizardStep === 1 ? (
+              <FileText className="h-10 w-10" />
+            ) : (
+              <UploadCloud className="h-10 w-10" />
+            )}
           </div>
           <h3 className="text-xl font-semibold mb-3 text-slate-800">
-            Nenhum arquivo selecionado. Arraste um PDF ou clique para buscar.
+            {wizardStep === 1
+              ? 'Upload do Pedido (Load Request)'
+              : wizardStep === 2
+                ? 'Upload da Cotação 1 (Várias opções)'
+                : 'Upload da Cotação 2 (Opção única)'}
           </h3>
           <p className="text-slate-500 mb-8 max-w-md">
-            Faça o upload do documento de cotação recebido. O sistema extrairá os dados
-            automaticamente usando Inteligência Artificial.
+            Arraste um PDF ou clique para buscar em seu computador.
           </p>
           <Button
             type="button"
@@ -306,16 +458,40 @@ export default function Upload() {
           </Button>
         </div>
 
+        {wizardStep === 3 && (
+          <div className="mt-6 flex justify-center">
+            <Button
+              variant="ghost"
+              onClick={handleSkipCota2}
+              className="text-slate-500 hover:text-slate-800"
+            >
+              Pular esta etapa (Não tenho segunda cotação) <ChevronRight className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
         <div className="mt-8 bg-blue-50/80 border border-blue-100 rounded-lg p-5 flex gap-4 text-blue-800">
           <Info className="h-6 w-6 shrink-0 mt-0.5 text-blue-600" />
           <div className="text-sm space-y-2">
-            <p className="font-semibold text-blue-900 text-base">Instruções para Upload:</p>
+            <p className="font-semibold text-blue-900 text-base">Instruções:</p>
             <ul className="list-disc pl-5 space-y-1.5 text-blue-800/80">
-              <li>Apenas arquivos PDF são aceitos no momento (máximo 5MB).</li>
-              <li>
-                A Inteligência Artificial extrairá automaticamente: Nome do Agente, Modalidade
-                (Aéreo/FCL/LCL), Frete Base, Transit Time e ETD.
-              </li>
+              {wizardStep === 1 && (
+                <li>
+                  Envie o documento de solicitação de carga para estabelecer os critérios da
+                  cotação.
+                </li>
+              )}
+              {wizardStep === 2 && (
+                <li>
+                  A IA irá ler o documento e extrair todas as cotações listadas nele
+                  automaticamente.
+                </li>
+              )}
+              {wizardStep === 3 && (
+                <li>
+                  Envie a oferta concorrente ou pule esta etapa para prosseguir para a revisão.
+                </li>
+              )}
             </ul>
           </div>
         </div>
@@ -328,10 +504,10 @@ export default function Upload() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-bold tracking-tight mb-1 text-slate-900">
-            Upload de Cotações
+            Upload de Documentos
           </h2>
           <p className="text-slate-500">
-            Envie os arquivos das transportadoras em PDF para iniciar a análise inteligente.
+            Siga as etapas para registrar o pedido e as cotações concorrentes.
           </p>
         </div>
         <Button
@@ -341,14 +517,13 @@ export default function Upload() {
           className="hidden sm:flex border-slate-300 text-slate-700"
         >
           <Link to="/dashboard" className="flex items-center gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Voltar
+            <ArrowLeft className="h-4 w-4" /> Voltar
           </Link>
         </Button>
       </div>
 
       <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm mb-6">
-        <Stepper currentStep={1} />
+        <Stepper currentStep={wizardStep} />
         {renderContent()}
       </Card>
     </div>

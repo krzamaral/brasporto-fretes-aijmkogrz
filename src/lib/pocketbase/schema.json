@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-12T14:15:20.782Z",
+  "generatedAt": "2026-05-12T17:20:27.137Z",
   "collections": [
     {
       "name": "users",
@@ -48,8 +48,8 @@
       "name": "quotations",
       "type": "base",
       "apiRules": {
-        "list": "@request.auth.id != ''",
-        "view": "@request.auth.id != ''",
+        "list": "@request.auth.id != '' && (user_id = @request.auth.id || @request.auth.email ~ '@brasporto.com')",
+        "view": "@request.auth.id != '' && (user_id = @request.auth.id || @request.auth.email ~ '@brasporto.com')",
         "create": "user_id = @request.auth.id",
         "update": "user_id = @request.auth.id",
         "delete": "user_id = @request.auth.id"
@@ -124,6 +124,26 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "cotacao_round_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "cotacao_rounds"
+        },
+        {
+          "name": "compatibilidade_score",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "pedido_id",
+          "type": "relation",
+          "required": false,
+          "system": false,
+          "collectionRef": "pedidos"
         }
       ],
       "indexes": ["CREATE INDEX idx_quotations_user_id ON quotations (user_id)"]
@@ -168,6 +188,140 @@
         }
       ],
       "indexes": ["CREATE INDEX idx_extracted_data_quotation_id ON extracted_data (quotation_id)"]
+    },
+    {
+      "name": "pedidos",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && (user_id = @request.auth.id || @request.auth.email ~ '@brasporto.com')",
+        "view": "@request.auth.id != '' && (user_id = @request.auth.id || @request.auth.email ~ '@brasporto.com')",
+        "create": "user_id = @request.auth.id",
+        "update": "user_id = @request.auth.id",
+        "delete": "user_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "origem",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "destino",
+          "type": "text",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "peso_bruto",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "volume",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "tipo_mercadoria",
+          "type": "text",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "modal_desejado",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["Aéreo", "FCL", "LCL"]
+        },
+        {
+          "name": "prazo_desejado_dias",
+          "type": "number",
+          "required": true,
+          "system": false
+        },
+        {
+          "name": "status",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["aguardando_cotacao", "em_andamento", "concluido"]
+        },
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "name": "cotacao_rounds",
+      "type": "base",
+      "apiRules": {
+        "list": "@request.auth.id != '' && (user_id = @request.auth.id || @request.auth.email ~ '@brasporto.com')",
+        "view": "@request.auth.id != '' && (user_id = @request.auth.id || @request.auth.email ~ '@brasporto.com')",
+        "create": "user_id = @request.auth.id",
+        "update": "user_id = @request.auth.id",
+        "delete": "user_id = @request.auth.id"
+      },
+      "fields": [
+        {
+          "name": "pedido_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "pedidos"
+        },
+        {
+          "name": "nome_round",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": ["cota1", "cota2"]
+        },
+        {
+          "name": "user_id",
+          "type": "relation",
+          "required": true,
+          "system": false,
+          "collectionRef": "users"
+        },
+        {
+          "name": "created",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate"]
+        },
+        {
+          "name": "updated",
+          "type": "autodate",
+          "required": false,
+          "system": false,
+          "autodateTriggers": ["onCreate", "onUpdate"]
+        }
+      ],
+      "indexes": []
     }
   ]
 }

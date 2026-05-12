@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, AlertTriangle, Save, Loader2 } from 'lucide-react'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { ArrowLeft, Save, Loader2, Info } from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -20,466 +20,387 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
-import { getLatestExtractedData } from '@/services/extracted_data'
-import { createQuotation, getQuotations, updateQuotation } from '@/services/quotations'
-import { useForm } from 'react-hook-form'
+import { getPedido, updatePedido, Pedido } from '@/services/pedidos'
+import { createCotacaoRound } from '@/services/cotacao_rounds'
+import { createQuotation } from '@/services/quotations'
+import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 
-const emptyToNull = (val: any) => {
-  if (val === '' || val === undefined || val === null) return null
-  const num = Number(val)
-  return Number.isNaN(num) ? null : num
-}
+const quoteSchema = z.object({
+  agent_name: z.string().min(1, 'Obrigatório'),
+  modal: z.enum(['Aéreo', 'FCL', 'LCL']),
+  cost: z.number({ invalid_type_error: 'Obrigatório' }).min(0.01, 'Inválido'),
+  taxable_weight: z.number().nullable().optional(),
+  free_time: z.number().nullable().optional(),
+  transit_time: z.number().nullable().optional(),
+  etd: z.string().nullable().optional(),
+  round: z.enum(['cota1', 'cota2']),
+})
 
-const formSchema = z
-  .object({
-    agent_name: z.string().min(1, 'Campo obrigatório não preenchido: Nome do Agente'),
-    modal: z.enum(['Aéreo', 'FCL', 'LCL'], {
-      required_error: 'Campo obrigatório não preenchido: Modal',
-    }),
-    cost: z.preprocess(
-      emptyToNull,
-      z
-        .number({ invalid_type_error: 'Campo obrigatório não preenchido: Frete Base' })
-        .min(0.01, 'Campo obrigatório não preenchido: Frete Base'),
-    ),
-    taxable_weight: z.preprocess(emptyToNull, z.number().nullable().optional()),
-    free_time: z.preprocess(emptyToNull, z.number().nullable().optional()),
-    transit_time: z.preprocess(emptyToNull, z.number().nullable().optional()),
-    etd: z.string().nullable().optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.modal === 'Aéreo' && (!data.taxable_weight || data.taxable_weight <= 0)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Campo obrigatório não preenchido: Peso Taxável',
-        path: ['taxable_weight'],
-      })
-    }
-    if (data.modal === 'FCL' && (data.free_time === null || data.free_time === undefined)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Campo obrigatório não preenchido: Free Time',
-        path: ['free_time'],
-      })
-    }
-  })
-
+const formSchema = z.object({ quotes: z.array(quoteSchema) })
 type FormValues = z.infer<typeof formSchema>
 
 export default function Review() {
   const { user } = useAuth()
   const { toast } = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
+
   const [loading, setLoading] = useState(true)
-  const [rawData, setRawData] = useState<Record<string, any> | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [pedido, setPedido] = useState<Pedido | null>(null)
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    mode: 'onChange',
-    defaultValues: {
-      agent_name: '',
-      modal: undefined,
-      cost: null as any,
-      taxable_weight: null,
-      free_time: null,
-      transit_time: null,
-      etd: '',
-    },
+    defaultValues: { quotes: [] },
   })
+
+  const { fields } = useFieldArray({ control: form.control, name: 'quotes' })
 
   useEffect(() => {
     async function loadData() {
-      try {
-        const res = await getLatestExtractedData()
-        if (res.items.length > 0) {
-          const extracted = res.items[0]
-          const data = extracted.raw_data || {}
-          setRawData(data)
-
-          let etdVal = ''
-          if (data.etd) {
-            etdVal = String(data.etd).split('T')[0]
-          }
-
-          form.reset({
-            agent_name: data.agent_name || '',
-            modal: ['Aéreo', 'FCL', 'LCL'].includes(data.modal) ? data.modal : undefined,
-            cost: data.cost ? Number(data.cost) : (null as any),
-            taxable_weight: data.taxable_weight ? Number(data.taxable_weight) : null,
-            free_time: data.free_time ? Number(data.free_time) : null,
-            transit_time: data.transit_time ? Number(data.transit_time) : null,
-            etd: etdVal,
-          })
-
-          setTimeout(() => form.trigger(), 50)
-        }
-      } catch (error) {
-        console.error(error)
+      const state = location.state as { pedidoId: string; cota1Quotes: any[]; cota2Quote: any }
+      if (!state || !state.pedidoId) {
         toast({
-          title: 'Erro',
-          description: 'Falha ao carregar dados extraídos.',
+          title: 'Sessão expirada',
+          description: 'Por favor, inicie o processo novamente.',
           variant: 'destructive',
         })
+        navigate('/upload')
+        return
+      }
+
+      try {
+        const ped = await getPedido(state.pedidoId)
+        setPedido(ped)
+
+        const combined = []
+        if (state.cota1Quotes) {
+          state.cota1Quotes.forEach((q) => combined.push({ ...q, round: 'cota1' }))
+        }
+        if (state.cota2Quote) {
+          combined.push({ ...state.cota2Quote, round: 'cota2' })
+        }
+
+        form.reset({
+          quotes: combined.map((q) => ({
+            agent_name: q.agent_name || '',
+            modal: ['Aéreo', 'FCL', 'LCL'].includes(q.modal) ? q.modal : ped.modal_desejado,
+            cost: Number(q.cost) || (null as any),
+            taxable_weight: q.taxable_weight ? Number(q.taxable_weight) : null,
+            free_time: q.free_time ? Number(q.free_time) : null,
+            transit_time: q.transit_time ? Number(q.transit_time) : null,
+            etd: q.etd ? String(q.etd).split('T')[0] : '',
+            round: q.round as 'cota1' | 'cota2',
+          })),
+        })
+      } catch (error) {
+        toast({ title: 'Erro', description: 'Falha ao carregar dados.', variant: 'destructive' })
       } finally {
         setLoading(false)
       }
     }
     loadData()
-  }, [form, toast])
-
-  const modalValue = form.watch('modal')
-
-  const isMissing = (field: string) => {
-    if (!rawData) return false
-    return (
-      rawData[field] === null ||
-      rawData[field] === undefined ||
-      String(rawData[field]).trim() === ''
-    )
-  }
+  }, [form, location, navigate, toast])
 
   const onSubmit = async (data: FormValues) => {
-    if (!user) return
+    if (!user || !pedido) return
     setIsSubmitting(true)
     try {
-      const existingQuots = await getQuotations()
-
-      const newQuotBase = {
-        agent_name: data.agent_name,
-        modal: data.modal,
-        cost: data.cost as number,
-        taxable_weight:
-          data.modal === 'Aéreo' && data.taxable_weight !== null ? data.taxable_weight : undefined,
-        free_time: data.modal === 'FCL' && data.free_time !== null ? data.free_time : undefined,
-        transit_time: data.transit_time !== null ? data.transit_time : undefined,
-        etd: data.etd || undefined,
-      }
-
-      const getEtdDays = (etd?: string) =>
+      const getEtdDays = (etd?: string | null) =>
         etd ? Math.max(0, (new Date(etd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 30
-
-      const allQuots = [...existingQuots, newQuotBase as any]
-
-      const costs = allQuots.map((q) => q.cost)
+      const costs = data.quotes.map((q) => q.cost)
       const maxC = Math.max(...costs),
         minC = Math.min(...costs)
-
-      const tts = allQuots.map((q) => q.transit_time || 30)
+      const tts = data.quotes.map((q) => q.transit_time || 30)
       const maxTT = Math.max(...tts),
         minTT = Math.min(...tts)
-
-      const etds = allQuots.map((q) => getEtdDays(q.etd))
+      const etds = data.quotes.map((q) => getEtdDays(q.etd))
       const maxETD = Math.max(...etds),
         minETD = Math.min(...etds)
-
-      const fts = allQuots.map((q) => q.free_time || 0)
+      const fts = data.quotes.map((q) => q.free_time || 0)
       const maxFT = Math.max(...fts),
         minFT = Math.min(...fts)
 
-      const calcScore = (q: any) => {
+      const avgCost = costs.length > 0 ? costs.reduce((a, b) => a + b, 0) / costs.length : 1
+
+      const hasCota1 = data.quotes.some((q) => q.round === 'cota1')
+      const hasCota2 = data.quotes.some((q) => q.round === 'cota2')
+
+      let round1Id, round2Id
+      if (hasCota1)
+        round1Id = (
+          await createCotacaoRound({ pedido_id: pedido.id, nome_round: 'cota1', user_id: user.id })
+        ).id
+      if (hasCota2)
+        round2Id = (
+          await createCotacaoRound({ pedido_id: pedido.id, nome_round: 'cota2', user_id: user.id })
+        ).id
+
+      const promises = data.quotes.map((q) => {
+        let compat = 0
+        let ttDiff = (q.transit_time || 30) - pedido.prazo_desejado_dias
+        if (ttDiff <= 0) compat += 30
+        else compat += Math.max(0, 30 - ttDiff * 5)
+
+        if (q.modal === pedido.modal_desejado) compat += 20
+        if ((q.free_time || 0) >= 7) compat += 10
+        if (q.cost <= avgCost) compat += 40
+        else compat += Math.max(0, 40 - ((q.cost - avgCost) / avgCost) * 40)
+
         const normC = maxC === minC ? 100 : ((maxC - q.cost) / (maxC - minC)) * 100
-        const tt = q.transit_time || maxTT
-        const normTT = maxTT === minTT ? 100 : ((maxTT - tt) / (maxTT - minTT)) * 100
-        const etd = getEtdDays(q.etd)
-        const normETD = maxETD === minETD ? 100 : ((maxETD - etd) / (maxETD - minETD)) * 100
-        const ft = q.free_time || 0
-        const normFT = maxFT === minFT ? 100 : ((ft - minFT) / (maxFT - minFT)) * 100
+        const normTT =
+          maxTT === minTT ? 100 : ((maxTT - (q.transit_time || 30)) / (maxTT - minTT)) * 100
+        const normETD =
+          maxETD === minETD ? 100 : ((maxETD - getEtdDays(q.etd)) / (maxETD - minETD)) * 100
+        const normFT =
+          maxFT === minFT ? 100 : (((q.free_time || 0) - minFT) / (maxFT - minFT)) * 100
+        const scoreRel = Math.round(normC * 0.4 + normTT * 0.3 + normETD * 0.2 + normFT * 0.1)
+        const finalScore = Math.round(compat * 0.6 + scoreRel * 0.4)
 
-        return Math.round(normC * 0.4 + normTT * 0.3 + normETD * 0.2 + normFT * 0.1)
-      }
-
-      const newScore = calcScore(newQuotBase)
-
-      const updates = existingQuots.map((q) => {
-        const s = calcScore(q)
-        if (s !== q.score) {
-          return updateQuotation(q.id, { score: s })
-        }
-        return Promise.resolve()
-      })
-
-      await Promise.all([
-        ...updates,
-        createQuotation({
+        return createQuotation({
+          agent_name: q.agent_name,
+          modal: q.modal,
+          cost: q.cost,
+          transit_time: q.transit_time || undefined,
+          free_time: q.free_time || undefined,
+          etd: q.etd || undefined,
+          taxable_weight: q.taxable_weight || undefined,
+          score: finalScore,
+          compatibilidade_score: Math.round(compat),
+          pedido_id: pedido.id,
+          cotacao_round_id: q.round === 'cota1' ? round1Id : round2Id,
           user_id: user.id,
-          ...newQuotBase,
-          score: newScore,
-        }),
-      ])
-
-      toast({ title: 'Sucesso', description: 'Cotação salva e ranking processado!' })
-      navigate('/ranking')
-    } catch (error) {
-      console.error(error)
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível salvar a cotação.',
-        variant: 'destructive',
+        })
       })
+
+      await Promise.all(promises)
+      await updatePedido(pedido.id, { status: 'concluido' })
+      toast({ title: 'Sucesso', description: 'Cotações salvas e rankeadas!' })
+      navigate('/ranking', { state: { pedidoId: pedido.id } })
+    } catch (error) {
+      toast({ title: 'Erro', description: 'Não foi possível salvar.', variant: 'destructive' })
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  const MissingAlert = ({ field }: { field: string }) => {
-    if (!isMissing(field)) return null
+  if (loading)
     return (
-      <Tooltip>
-        <TooltipTrigger type="button" className="cursor-help ml-2 inline-flex items-center">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>Dado não encontrado no PDF. Preenchimento manual necessário.</p>
-        </TooltipContent>
-      </Tooltip>
+      <div className="flex flex-col items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
+      </div>
     )
-  }
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight mb-1 text-slate-800">
-            Conferência de Dados
+          <h2 className="text-2xl font-bold tracking-tight text-slate-800">
+            Conferência de Cotações
           </h2>
           <p className="text-muted-foreground">
-            Revise as informações extraídas antes de prosseguir.
+            Revise todas as opções extraídas antes de gerar o ranking.
           </p>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link to="/upload" className="flex items-center gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Voltar
-          </Link>
-        </Button>
       </div>
 
       <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm">
-        <Stepper currentStep={2} />
+        <Stepper currentStep={4} />
 
-        <div className="mt-12">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-4" />
-              <p className="text-slate-500">Carregando dados extraídos...</p>
+        {pedido && (
+          <div className="mt-8 mb-6 p-4 bg-slate-50 border rounded-lg flex items-start gap-4">
+            <Info className="h-5 w-5 text-blue-500 mt-0.5" />
+            <div>
+              <h4 className="font-semibold text-slate-800">Referência do Pedido</h4>
+              <p className="text-sm text-slate-600">
+                {pedido.origem} → {pedido.destino} | {pedido.modal_desejado} | Prazo alvo:{' '}
+                {pedido.prazo_desejado_dias} dias | Peso: {pedido.peso_bruto}kg
+              </p>
             </div>
-          ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <FormField
-                    control={form.control}
-                    name="agent_name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center">
-                          Nome do Agente <MissingAlert field="agent_name" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Ex: Agente Logístico S/A"
-                            {...field}
-                            className={
-                              form.formState.errors.agent_name
-                                ? 'border-red-500 focus-visible:ring-red-500'
-                                : ''
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+          </div>
+        )}
 
-                  <FormField
-                    control={form.control}
-                    name="modal"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center">
-                          Modal <MissingAlert field="modal" />
-                        </FormLabel>
-                        <Select
-                          onValueChange={(val) => {
-                            field.onChange(val)
-                            form.trigger()
-                          }}
-                          value={field.value || ''}
-                        >
-                          <FormControl>
-                            <SelectTrigger
-                              className={
-                                form.formState.errors.modal
-                                  ? 'border-red-500 focus:ring-red-500'
-                                  : ''
-                              }
-                            >
-                              <SelectValue placeholder="Selecione o modal" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="Aéreo">Aéreo</SelectItem>
-                            <SelectItem value="FCL">FCL</SelectItem>
-                            <SelectItem value="LCL">LCL</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="cost"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center">
-                          Frete Base / Cost (US$) <MissingAlert field="cost" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="Ex: 1500.00"
-                            {...field}
-                            value={field.value ?? ''}
-                            className={
-                              form.formState.errors.cost
-                                ? 'border-red-500 focus-visible:ring-red-500'
-                                : ''
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {modalValue === 'Aéreo' && (
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            {fields.map((field, index) => {
+              const roundLabel =
+                form.watch(`quotes.${index}.round`) === 'cota1'
+                  ? 'Cotação 1 (Múltiplas)'
+                  : 'Cotação 2'
+              const modalValue = form.watch(`quotes.${index}.modal`)
+              return (
+                <Card
+                  key={field.id}
+                  className="p-5 border-slate-200 shadow-sm relative overflow-hidden"
+                >
+                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                  <h3 className="font-semibold text-slate-800 mb-4 ml-2">
+                    Opção {index + 1}{' '}
+                    <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
+                      {roundLabel}
+                    </span>
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 ml-2">
                     <FormField
                       control={form.control}
-                      name="taxable_weight"
+                      name={`quotes.${index}.agent_name`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="flex items-center">
-                            Peso Taxável (kg) <MissingAlert field="taxable_weight" />
-                          </FormLabel>
+                          <FormLabel>Agente</FormLabel>
+                          <FormControl>
+                            <Input {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`quotes.${index}.modal`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Modal</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="Aéreo">Aéreo</SelectItem>
+                              <SelectItem value="FCL">FCL</SelectItem>
+                              <SelectItem value="LCL">LCL</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name={`quotes.${index}.cost`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Custo (US$)</FormLabel>
                           <FormControl>
                             <Input
                               type="number"
-                              step="0.1"
-                              placeholder="Ex: 500"
+                              step="0.01"
                               {...field}
-                              value={field.value ?? ''}
-                              className={
-                                form.formState.errors.taxable_weight
-                                  ? 'border-red-500 focus-visible:ring-red-500'
-                                  : ''
-                              }
+                              onChange={(e) => field.onChange(parseFloat(e.target.value))}
                             />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                  )}
-
-                  {modalValue === 'FCL' && (
                     <FormField
                       control={form.control}
-                      name="free_time"
+                      name={`quotes.${index}.transit_time`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="flex items-center">
-                            Free Time (dias) <MissingAlert field="free_time" />
-                          </FormLabel>
+                          <FormLabel>Transit Time (dias)</FormLabel>
                           <FormControl>
                             <Input
                               type="number"
-                              placeholder="Ex: 7"
                               {...field}
-                              value={field.value ?? ''}
-                              className={
-                                form.formState.errors.free_time
-                                  ? 'border-red-500 focus-visible:ring-red-500'
-                                  : ''
-                              }
+                              value={field.value || ''}
+                              onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
                             />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                  )}
-
-                  <FormField
-                    control={form.control}
-                    name="transit_time"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center">
-                          Transit Time (dias) <MissingAlert field="transit_time" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            placeholder="Ex: 30"
-                            {...field}
-                            value={field.value ?? ''}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                    {modalValue === 'Aéreo' && (
+                      <FormField
+                        control={form.control}
+                        name={`quotes.${index}.taxable_weight`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Peso Taxável (kg)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.1"
+                                {...field}
+                                value={field.value || ''}
+                                onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="etd"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="flex items-center">
-                          ETD (Data de Saída) <MissingAlert field="etd" />
-                        </FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} value={field.value ?? ''} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                    {modalValue === 'FCL' && (
+                      <FormField
+                        control={form.control}
+                        name={`quotes.${index}.free_time`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Free Time (dias)</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                {...field}
+                                value={field.value || ''}
+                                onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     )}
-                  />
-                </div>
+                    <FormField
+                      control={form.control}
+                      name={`quotes.${index}.etd`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ETD</FormLabel>
+                          <FormControl>
+                            <Input type="date" {...field} value={field.value || ''} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </Card>
+              )
+            })}
 
-                <div className="flex justify-end pt-6 border-t mt-8">
-                  <Button
-                    type="submit"
-                    size="lg"
-                    className="bg-blue-600 hover:bg-blue-700 text-white min-w-[200px] transition-all"
-                    disabled={!form.formState.isValid || isSubmitting}
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Processando Score...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="mr-2 h-4 w-4" />
-                        Confirmar Extração
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          )}
-        </div>
+            {fields.length === 0 && (
+              <div className="text-center py-8 text-slate-500">
+                Nenhuma cotação extraída. Retorne e faça o upload novamente.
+              </div>
+            )}
+
+            <div className="flex justify-end pt-6 border-t mt-8">
+              <Button
+                type="submit"
+                size="lg"
+                className="bg-blue-600 hover:bg-blue-700 text-white min-w-[200px]"
+                disabled={isSubmitting || fields.length === 0}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processando...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" /> Finalizar e Rankear
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        </Form>
       </Card>
     </div>
   )
