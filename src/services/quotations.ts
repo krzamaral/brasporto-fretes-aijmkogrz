@@ -56,3 +56,17 @@ export const createQuotation = (data: Partial<Quotation>) =>
 export const updateQuotation = (id: string, data: Partial<Quotation>) =>
   pb.collection('quotations').update<Quotation>(id, data)
 export const deleteQuotation = (id: string) => pb.collection('quotations').delete(id)
+
+export const analisarCotacoesIA = (data: {
+  pedido_id: string
+  cotacoes: any[]
+  prazo_desejado_dias: number
+  origem: string
+  destino: string
+  peso_bruto: number
+  modal_desejado: string
+}) =>
+  pb.send('/backend/v1/analisar-cotacoes-ia', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })

@@ -9,19 +9,33 @@ import {
   FileDown,
   CheckCircle2,
   XCircle,
+  Bot,
+  Loader2,
 } from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { getQuotationsByPedido, type Quotation } from '@/services/quotations'
+import { getQuotationsByPedido, analisarCotacoesIA, type Quotation } from '@/services/quotations'
 import { getPedido, type Pedido } from '@/services/pedidos'
 import { cn } from '@/lib/utils'
+import { useToast } from '@/hooks/use-toast'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 export default function Ranking() {
   const location = useLocation()
+  const { toast } = useToast()
   const navigate = useNavigate()
   const [quotations, setQuotations] = useState<Quotation[]>([])
   const [pedido, setPedido] = useState<Pedido | null>(null)
+  const [isAiLoading, setIsAiLoading] = useState(false)
+  const [aiProposal, setAiProposal] = useState<any>(null)
+  const [isAiDialogOpen, setIsAiDialogOpen] = useState(false)
 
   useEffect(() => {
     async function loadData() {
@@ -43,6 +57,42 @@ export default function Ranking() {
     }
     loadData()
   }, [location, navigate])
+
+  const handleGenerateAiProposal = async () => {
+    if (!pedido || quotations.length === 0) return
+    setIsAiLoading(true)
+    try {
+      const payload = {
+        pedido_id: pedido.id,
+        cotacoes: quotations.map((q) => ({
+          id: q.id,
+          agent_name: q.agent_name,
+          modal: q.modal,
+          cost: q.cost,
+          transit_time: q.transit_time,
+          etd: q.etd || new Date().toISOString(),
+          free_time: q.free_time || 0,
+          taxable_weight: q.taxable_weight || 0,
+        })),
+        prazo_desejado_dias: pedido.prazo_desejado_dias,
+        origem: pedido.origem,
+        destino: pedido.destino,
+        peso_bruto: pedido.peso_bruto,
+        modal_desejado: pedido.modal_desejado,
+      }
+      const res = await analisarCotacoesIA(payload)
+      setAiProposal(res.data)
+      setIsAiDialogOpen(true)
+    } catch (err: any) {
+      toast({
+        title: 'Erro',
+        description: err.message || 'Erro ao gerar proposta',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsAiLoading(false)
+    }
+  }
 
   const generateJustification = (q: Quotation, ped: Pedido) => {
     return `Melhor opção para o pedido ${ped.origem} - ${ped.destino}. Atende o prazo de ${q.transit_time || '-'} dias com custo de US$ ${q.cost.toFixed(2)}.`
@@ -169,7 +219,20 @@ export default function Ranking() {
           </h2>
           <p className="text-muted-foreground">Decisão Estratégica de Frete</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button
+            onClick={handleGenerateAiProposal}
+            variant="default"
+            className="bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-2"
+            disabled={isAiLoading || quotations.length === 0}
+          >
+            {isAiLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Bot className="h-4 w-4" />
+            )}
+            Gerar Proposta IA
+          </Button>
           <Button
             onClick={() => window.print()}
             variant="outline"
@@ -208,6 +271,54 @@ export default function Ranking() {
           <div className="text-center py-12 text-slate-500">Nenhuma cotação disponível.</div>
         )}
       </Card>
+
+      <Dialog open={isAiDialogOpen} onOpenChange={setIsAiDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-purple-700">
+              <Bot className="h-5 w-5" /> Proposta Gerada por IA
+            </DialogTitle>
+            <DialogDescription>
+              A IA analisou as cotações, filtrou as que excedem 20% do prazo e selecionou a mais
+              econômica.
+            </DialogDescription>
+          </DialogHeader>
+
+          {aiProposal?.template && !aiProposal.template.error ? (
+            <div className="mt-4 space-y-4 text-slate-800 text-sm">
+              <div className="bg-slate-50 p-4 rounded-md border border-slate-200">
+                <h3 className="font-bold text-lg mb-4 text-center border-b pb-2">
+                  {aiProposal.template.titulo}
+                </h3>
+
+                <div className="mb-4">
+                  <h4 className="font-semibold text-slate-700 mb-1">Dados do Pedido</h4>
+                  <p className="whitespace-pre-wrap">{aiProposal.template.dados_pedido}</p>
+                </div>
+
+                <div className="mb-4">
+                  <h4 className="font-semibold text-slate-700 mb-1">Cotação Selecionada</h4>
+                  <p className="whitespace-pre-wrap">{aiProposal.template.cotacao_selecionada}</p>
+                </div>
+
+                <div className="mb-4">
+                  <h4 className="font-semibold text-slate-700 mb-1">Justificativa</h4>
+                  <p className="whitespace-pre-wrap">{aiProposal.template.justificativa}</p>
+                </div>
+
+                <div>
+                  <h4 className="font-semibold text-slate-700 mb-1">Próximos Passos</h4>
+                  <p className="whitespace-pre-wrap">{aiProposal.template.proximos_passos}</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 text-red-500 text-center">
+              Não foi possível gerar a proposta corretamente. Verifique os logs.
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
