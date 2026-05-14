@@ -222,6 +222,15 @@ export default function Upload() {
 
           const createdQ = await createQuotation(mappedQ)
           createdQuotes.push(createdQ)
+
+          try {
+            await pb.collection('extracted_data').create({
+              quotation_id: createdQ.id,
+              raw_data: q,
+            })
+          } catch (err) {
+            console.error('Failed to save extracted data:', err)
+          }
         }
 
         setCota1Quotes(createdQuotes)
@@ -270,6 +279,15 @@ export default function Upload() {
         }
 
         const cota2Quote = await createQuotation(mappedQ)
+
+        try {
+          await pb.collection('extracted_data').create({
+            quotation_id: cota2Quote.id,
+            raw_data: q,
+          })
+        } catch (err) {
+          console.error('Failed to save extracted data:', err)
+        }
 
         toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
         navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote } })
