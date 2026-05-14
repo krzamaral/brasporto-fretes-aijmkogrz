@@ -1,18 +1,30 @@
+routerAdd('OPTIONS', '/backend/v1/extract-pdf', (e) => {
+  e.response.header().set('Access-Control-Allow-Origin', '*')
+  e.response.header().set('Access-Control-Allow-Headers', 'authorization, apikey, content-type')
+  e.response.header().set('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  return e.noContent(204)
+})
+
 routerAdd(
   'POST',
   '/backend/v1/extract-pdf',
   (e) => {
+    e.response.header().set('Access-Control-Allow-Origin', '*')
+
     const body = e.requestInfo().body || {}
     const base64Data = body.pdfBase64
     const docType = body.docType || 'cota2'
 
     if (!base64Data) {
-      return e.badRequestError('Arquivo PDF ausente na requisição.')
+      throw new BadRequestError('Arquivo PDF ausente na requisição.')
     }
 
-    let url = $secrets.get('SKIP_AI_GATEWAY_URL') || ''
-    if (url.endsWith('/')) url = url.slice(0, -1)
-    const apiKey = $secrets.get('SKIP_AI_GATEWAY_API_KEY') || ''
+    const apiUrl = 'https://api.openai.com/v1/chat/completions'
+    const apiKey = $secrets.get('OPENAI_API_KEY') || ''
+
+    if (!apiKey) {
+      throw new UnauthorizedError('OPENAI_API_KEY secret is not configured.')
+    }
 
     let sysPrompt = ''
     if (docType === 'pedido') {
@@ -27,7 +39,7 @@ routerAdd(
     }
 
     const aiPayload = {
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'gpt-4o',
       messages: [
         {
           role: 'user',
@@ -40,24 +52,46 @@ routerAdd(
       response_format: { type: 'json_object' },
     }
 
-    const res = $http.send({
-      url: url + '/chat/completions',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + apiKey,
-      },
-      body: JSON.stringify(aiPayload),
-      timeout: 120,
-    })
+    const retries = [2000, 4000, 8000]
+    let res
+    for (let i = 0; i <= retries.length; i++) {
+      res = $http.send({
+        url: apiUrl,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + apiKey,
+        },
+        body: JSON.stringify(aiPayload),
+        timeout: 120,
+      })
 
-    if (res.statusCode !== 200) {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        break
+      }
+
+      if (res.statusCode === 503 && i < retries.length) {
+        const sleepMs = retries[i]
+        const wake = Date.now() + sleepMs
+        while (Date.now() < wake) {}
+        continue
+      }
+
       $app
         .logger()
         .error('AI extraction failed', 'status', res.statusCode, 'body', res.json || res.body)
-      if (res.statusCode === 400) return e.badRequestError('O PDF enviado é inválido ou ilegível.')
-      if (res.statusCode === 413) return e.badRequestError('O PDF excede o limite de tamanho.')
-      return e.internalServerError('Falha na comunicação com o serviço de IA.')
+
+      if (res.statusCode === 400 || res.statusCode === 401 || res.statusCode === 404) {
+        throw new BadRequestError('O arquivo enviado é inválido ou erro de autenticação na IA.')
+      }
+
+      if (res.statusCode === 413) {
+        throw new BadRequestError('O PDF excede o limite de tamanho.')
+      }
+
+      if (i === retries.length) {
+        throw new InternalServerError('Falha na comunicação com o serviço de IA.')
+      }
     }
 
     let content = res.json?.choices?.[0]?.message?.content || '{}'

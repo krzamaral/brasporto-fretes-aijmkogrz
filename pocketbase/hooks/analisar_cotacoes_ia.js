@@ -117,19 +117,15 @@ routerAdd(
       '5. Proximos passos: "Confirme a aceitacao desta proposta para prosseguirmos com o embarque."\n\n' +
       'Retorne APENAS o template em JSON com campos: titulo, dados_pedido, cotacao_selecionada, justificativa, proximos_passos. Sem markdown, sem blocos de codigo.'
 
-    let apiUrl = $secrets.get('SKIP_AI_GATEWAY_URL')
-    if (!apiUrl) {
-      apiUrl = 'https://api.openai.com'
-    }
-    apiUrl += '/v1/chat/completions'
+    const apiUrl = 'https://api.openai.com/v1/chat/completions'
+    const apiKey = $secrets.get('OPENAI_API_KEY') || ''
 
-    let apiKey = $secrets.get('SKIP_AI_GATEWAY_API_KEY')
     if (!apiKey) {
-      apiKey = $secrets.get('OPENAI_API_KEY') || ''
+      throw new UnauthorizedError('OPENAI_API_KEY secret is not configured.')
     }
 
     const aiBody = {
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o',
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content: prompt }],
     }
@@ -160,7 +156,8 @@ routerAdd(
       }
 
       if (res.statusCode === 400 || res.statusCode === 401 || res.statusCode === 404) {
-        return e.json(res.statusCode, { error: 'AI gateway error', details: res.json })
+        $app.logger().error('AI API error', 'status', res.statusCode, 'body', res.json || res.body)
+        return e.json(res.statusCode, { error: 'AI API error', details: res.json })
       }
 
       if (i === retries.length) {
