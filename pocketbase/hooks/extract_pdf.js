@@ -92,6 +92,12 @@ routerAdd(
       'OpenAI-Beta': 'assistants=v2',
     }
 
+    const jsonHeaders = {
+      Authorization: 'Bearer ' + apiKey,
+      'OpenAI-Beta': 'assistants=v2',
+      'Content-Type': 'application/json',
+    }
+
     // 2. Upload file to OpenAI
     const uploadRes = $http.send({
       url: 'https://api.openai.com/v1/files',
@@ -122,7 +128,7 @@ routerAdd(
     const asstRes = $http.send({
       url: 'https://api.openai.com/v1/assistants',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...openaiHeaders },
+      headers: jsonHeaders,
       body: JSON.stringify({
         name: 'PDF Extractor',
         model: 'gpt-4o',
@@ -153,7 +159,7 @@ routerAdd(
     const runRes = $http.send({
       url: 'https://api.openai.com/v1/threads/runs',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...openaiHeaders },
+      headers: jsonHeaders,
       body: JSON.stringify({
         assistant_id: assistantId,
         thread: {
