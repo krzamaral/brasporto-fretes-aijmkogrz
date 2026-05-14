@@ -36,6 +36,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
 import { createPedido } from '@/services/pedidos'
+import { createCotacaoRound } from '@/services/cotacao_rounds'
+import { createQuotation } from '@/services/quotations'
 import { useAuth } from '@/hooks/use-auth'
 
 const pedidoSchema = z.object({
@@ -174,23 +176,101 @@ export default function Upload() {
         setStatus('form')
         toast({ title: 'Dados extraídos', description: 'Revise os dados do pedido abaixo.' })
       } else if (wizardStep === 2) {
+        let quotes = []
         if (extracted.type === 'multiple' && Array.isArray(extracted.quotations)) {
-          setCota1Quotes(extracted.quotations)
+          quotes = extracted.quotations
         } else if (extracted.type === 'single') {
-          setCota1Quotes([extracted.data])
+          quotes = [extracted.data]
         } else {
-          setCota1Quotes(Array.isArray(extracted) ? extracted : [extracted])
+          quotes = Array.isArray(extracted) ? extracted : [extracted]
         }
+
+        if (!pedidoId) throw new Error('Pedido ID ausente. Volte à etapa 1.')
+
+        const round = await createCotacaoRound({
+          pedido_id: pedidoId,
+          nome_round: 'cota1',
+          user_id: user.id,
+        })
+
+        const createdQuotes = []
+        for (const q of quotes) {
+          const modal = ['Aéreo', 'FCL', 'LCL'].includes(q.modal)
+            ? (q.modal as 'Aéreo' | 'FCL' | 'LCL')
+            : 'Aéreo'
+          const mappedQ = {
+            agent_name: q.agent_name || 'Desconhecido',
+            modal,
+            cost: Number(q.cost) || 0,
+            transit_time: q.transit_time ? Number(q.transit_time) : undefined,
+            free_time: q.free_time ? Number(q.free_time) : undefined,
+            taxable_weight: q.taxable_weight ? Number(q.taxable_weight) : undefined,
+            etd: q.etd || undefined,
+            cotacao_round_id: round.id,
+            pedido_id: pedidoId,
+            user_id: user.id,
+          }
+
+          if (mappedQ.etd) {
+            const d = new Date(mappedQ.etd)
+            if (!isNaN(d.getTime())) {
+              mappedQ.etd = d.toISOString()
+            } else {
+              mappedQ.etd = undefined
+            }
+          }
+
+          const createdQ = await createQuotation(mappedQ)
+          createdQuotes.push(createdQ)
+        }
+
+        setCota1Quotes(createdQuotes)
         setStatus('idle')
         setWizardStep(3)
         toast({ title: 'Cotações Extraídas', description: 'Rodada 1 concluída. Envie a Rodada 2.' })
       } else if (wizardStep === 3) {
-        const cota2Quote =
+        let q =
           extracted.type === 'single'
             ? extracted.data
             : Array.isArray(extracted.quotations)
               ? extracted.quotations[0]
               : extracted
+
+        if (!pedidoId) throw new Error('Pedido ID ausente. Volte à etapa 1.')
+
+        const round = await createCotacaoRound({
+          pedido_id: pedidoId,
+          nome_round: 'cota2',
+          user_id: user.id,
+        })
+
+        const modal = ['Aéreo', 'FCL', 'LCL'].includes(q.modal)
+          ? (q.modal as 'Aéreo' | 'FCL' | 'LCL')
+          : 'Aéreo'
+        const mappedQ = {
+          agent_name: q.agent_name || 'Desconhecido',
+          modal,
+          cost: Number(q.cost) || 0,
+          transit_time: q.transit_time ? Number(q.transit_time) : undefined,
+          free_time: q.free_time ? Number(q.free_time) : undefined,
+          taxable_weight: q.taxable_weight ? Number(q.taxable_weight) : undefined,
+          etd: q.etd || undefined,
+          cotacao_round_id: round.id,
+          pedido_id: pedidoId,
+          user_id: user.id,
+        }
+
+        if (mappedQ.etd) {
+          const d = new Date(mappedQ.etd)
+          if (!isNaN(d.getTime())) {
+            mappedQ.etd = d.toISOString()
+          } else {
+            mappedQ.etd = undefined
+          }
+        }
+
+        const cota2Quote = await createQuotation(mappedQ)
+
         toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
         navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote } })
       }
@@ -201,14 +281,17 @@ export default function Upload() {
       let errorMsg =
         'Não foi possível processar o arquivo. Verifique sua conexão e tente novamente.'
 
-      if (err.status === 400) {
+      if (err?.status === 400) {
+        const validationMsg = getErrorMessage(err)
         errorMsg =
-          'Os dados do arquivo ou parâmetros enviados estão inválidos. Verifique o documento e tente novamente.'
-      } else if (err.status === 413) {
+          validationMsg !== 'An unexpected error occurred.' && validationMsg
+            ? validationMsg
+            : 'Os dados extraídos estão inválidos. Verifique o documento e tente novamente.'
+      } else if (err?.status === 413) {
         errorMsg = 'O arquivo é muito grande para ser processado.'
-      } else if (err.status >= 500) {
+      } else if (err?.status >= 500) {
         errorMsg = 'Erro interno do servidor. Tente novamente mais tarde.'
-      } else if (err.isAbort) {
+      } else if (err?.isAbort) {
         errorMsg = 'A requisição foi cancelada (tempo limite). Verifique sua conexão.'
       } else {
         const apiMsg = getErrorMessage(err)
@@ -241,12 +324,20 @@ export default function Upload() {
   const onPedidoSubmit = async (data: PedidoFormValues) => {
     if (!user) return
     try {
-      const pedido = await createPedido({
-        ...data,
-        volume: data.volume || undefined,
+      const pedidoPayload = {
+        origem: data.origem,
+        destino: data.destino,
+        peso_bruto: Number(data.peso_bruto),
+        volume: data.volume ? Number(data.volume) : undefined,
+        tipo_mercadoria: data.tipo_mercadoria || '',
+        modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(data.modal_desejado)
+          ? (data.modal_desejado as 'Aéreo' | 'FCL' | 'LCL')
+          : 'Aéreo',
+        prazo_desejado_dias: Number(data.prazo_desejado_dias),
         user_id: user.id,
-        status: 'aguardando_cotacao',
-      })
+        status: 'aguardando_cotacao' as const,
+      }
+      const pedido = await createPedido(pedidoPayload)
       setPedidoId(pedido.id)
       setWizardStep(2)
       setStatus('idle')
@@ -254,10 +345,17 @@ export default function Upload() {
         title: 'Pedido criado',
         description: 'Agora envie o documento da primeira rodada de cotação.',
       })
-    } catch (e) {
+    } catch (e: any) {
+      let errorMsg = 'Não foi possível salvar o pedido.'
+      if (e?.status === 400) {
+        const validationMsg = getErrorMessage(e)
+        if (validationMsg && validationMsg !== 'An unexpected error occurred.') {
+          errorMsg = validationMsg
+        }
+      }
       toast({
         title: 'Erro',
-        description: 'Não foi possível salvar o pedido.',
+        description: errorMsg,
         variant: 'destructive',
       })
     }
