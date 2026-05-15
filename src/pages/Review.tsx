@@ -29,16 +29,33 @@ import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 
-const quoteSchema = z.object({
-  agent_name: z.string().min(1, 'Obrigatório'),
-  modal: z.enum(['Aéreo', 'FCL', 'LCL']),
-  cost: z.number({ invalid_type_error: 'Obrigatório' }).min(0.01, 'Inválido'),
-  taxable_weight: z.number().nullable().optional(),
-  free_time: z.number().nullable().optional(),
-  transit_time: z.number().nullable().optional(),
-  etd: z.string().nullable().optional(),
-  round: z.enum(['cota1', 'cota2']),
-})
+const quoteSchema = z
+  .object({
+    agent_name: z.string().min(1, 'Obrigatório'),
+    modal: z.enum(['Aéreo', 'FCL', 'LCL']),
+    cost: z.number({ invalid_type_error: 'Obrigatório' }).min(0.01, 'Inválido'),
+    taxable_weight: z.number().nullable().optional(),
+    free_time: z.number().nullable().optional(),
+    transit_time: z.number().nullable().optional(),
+    etd: z.string().nullable().optional(),
+    round: z.enum(['cota1', 'cota2']),
+  })
+  .superRefine((data, ctx) => {
+    if (data.modal === 'Aéreo' && (data.taxable_weight == null || data.taxable_weight <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Peso Taxável é obrigatório para Aéreo',
+        path: ['taxable_weight'],
+      })
+    }
+    if (data.modal === 'FCL' && (data.free_time == null || data.free_time < 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Free Time é obrigatório para FCL',
+        path: ['free_time'],
+      })
+    }
+  })
 
 const formSchema = z.object({ quotes: z.array(quoteSchema) })
 type FormValues = z.infer<typeof formSchema>
@@ -56,6 +73,7 @@ export default function Review() {
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: { quotes: [] },
+    mode: 'onChange',
   })
 
   const { fields } = useFieldArray({ control: form.control, name: 'quotes' })
@@ -85,17 +103,30 @@ export default function Review() {
           combined.push({ ...state.cota2Quote, round: 'cota2' })
         }
 
+        const pedVolume = ped.volume || 0
+        const pedPeso = ped.peso_bruto || 0
+        const calcVolumetric = pedVolume * 166.667
+
         form.reset({
-          quotes: combined.map((q) => ({
-            agent_name: q.agent_name || '',
-            modal: ['Aéreo', 'FCL', 'LCL'].includes(q.modal) ? q.modal : ped.modal_desejado,
-            cost: Number(q.cost) || (null as any),
-            taxable_weight: q.taxable_weight ? Number(q.taxable_weight) : null,
-            free_time: q.free_time ? Number(q.free_time) : null,
-            transit_time: q.transit_time ? Number(q.transit_time) : null,
-            etd: q.etd ? String(q.etd).split('T')[0] : '',
-            round: q.round as 'cota1' | 'cota2',
-          })),
+          quotes: combined.map((q) => {
+            const modal = ['Aéreo', 'FCL', 'LCL'].includes(q.modal) ? q.modal : ped.modal_desejado
+            let taxable = q.taxable_weight ? Number(q.taxable_weight) : null
+
+            if (modal === 'Aéreo' && (!taxable || taxable <= 0)) {
+              taxable = Math.max(pedPeso, calcVolumetric)
+            }
+
+            return {
+              agent_name: q.agent_name || '',
+              modal: modal as 'Aéreo' | 'FCL' | 'LCL',
+              cost: Number(q.cost) || (null as any),
+              taxable_weight: taxable,
+              free_time: q.free_time ? Number(q.free_time) : null,
+              transit_time: q.transit_time ? Number(q.transit_time) : null,
+              etd: q.etd ? String(q.etd).split('T')[0] : '',
+              round: q.round as 'cota1' | 'cota2',
+            }
+          }),
         })
       } catch (error) {
         toast({ title: 'Erro', description: 'Falha ao carregar dados.', variant: 'destructive' })
@@ -141,16 +172,7 @@ export default function Review() {
         ).id
 
       const promises = data.quotes.map((q) => {
-        let compat = 0
-        let ttDiff = (q.transit_time || 30) - pedido.prazo_desejado_dias
-        if (ttDiff <= 0) compat += 30
-        else compat += Math.max(0, 30 - ttDiff * 5)
-
-        if (q.modal === pedido.modal_desejado) compat += 20
-        if ((q.free_time || 0) >= 7) compat += 10
-        if (q.cost <= avgCost) compat += 40
-        else compat += Math.max(0, 40 - ((q.cost - avgCost) / avgCost) * 40)
-
+        // N = (C * 0.40) + (TT * 0.30) + (ETD * 0.20) + (FT * 0.10)
         const normC = maxC === minC ? 100 : ((maxC - q.cost) / (maxC - minC)) * 100
         const normTT =
           maxTT === minTT ? 100 : ((maxTT - (q.transit_time || 30)) / (maxTT - minTT)) * 100
@@ -158,8 +180,13 @@ export default function Review() {
           maxETD === minETD ? 100 : ((maxETD - getEtdDays(q.etd)) / (maxETD - minETD)) * 100
         const normFT =
           maxFT === minFT ? 100 : (((q.free_time || 0) - minFT) / (maxFT - minFT)) * 100
-        const scoreRel = Math.round(normC * 0.4 + normTT * 0.3 + normETD * 0.2 + normFT * 0.1)
-        const finalScore = Math.round(compat * 0.6 + scoreRel * 0.4)
+
+        const finalScore = Math.round(normC * 0.4 + normTT * 0.3 + normETD * 0.2 + normFT * 0.1)
+
+        let compat = 100
+        let ttDiff = (q.transit_time || 30) - pedido.prazo_desejado_dias
+        if (ttDiff > 0) compat -= Math.min(100, ttDiff * 5)
+        if (q.modal !== pedido.modal_desejado) compat -= 20
 
         return createQuotation({
           agent_name: q.agent_name,
@@ -238,12 +265,20 @@ export default function Review() {
                   className="p-5 border-slate-200 shadow-sm relative overflow-hidden"
                 >
                   <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-                  <h3 className="font-semibold text-slate-800 mb-4 ml-2">
-                    Opção {index + 1}{' '}
-                    <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
-                      {roundLabel}
-                    </span>
-                  </h3>
+                  <div className="flex items-center justify-between mb-4 ml-2">
+                    <h3 className="font-semibold text-slate-800">
+                      Opção {index + 1}{' '}
+                      <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
+                        {roundLabel}
+                      </span>
+                    </h3>
+                    {Object.keys(form.formState.errors?.quotes?.[index] || {}).length > 0 && (
+                      <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full flex items-center">
+                        <Info className="w-3 h-3 mr-1" />
+                        Incompleta / Crítica
+                      </span>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 ml-2">
                     <FormField
                       control={form.control}

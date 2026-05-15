@@ -180,6 +180,14 @@ export default function Ranking() {
                     <span className="text-slate-500">Free Time</span>
                     <span className="font-medium text-slate-800">{q.free_time || 0} dias</span>
                   </div>
+                  {q.modal === 'Aéreo' && (
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
+                      <span className="text-slate-500">Peso Taxável</span>
+                      <span className="font-medium text-slate-800">
+                        {q.taxable_weight ? `${q.taxable_weight.toFixed(2)} kg` : '-'}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
                     <span className="text-slate-500">Score Compatibilidade</span>
                     <span className="font-semibold text-blue-600">
