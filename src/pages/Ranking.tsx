@@ -74,7 +74,7 @@ export default function Ranking() {
           free_time: q.free_time || 0,
           taxable_weight: q.taxable_weight || 0,
         })),
-        prazo_desejado_dias: pedido.prazo_desejado_dias,
+        prazo_desejado_dias: pedido.prazo_desejado_dias || null,
         origem: pedido.origem,
         destino: pedido.destino,
         peso_bruto: pedido.peso_bruto,
@@ -95,7 +95,14 @@ export default function Ranking() {
   }
 
   const generateJustification = (q: Quotation, ped: Pedido) => {
-    return `Melhor opção para o pedido ${ped.origem} - ${ped.destino}. Atende o prazo de ${q.transit_time || '-'} dias com custo de US$ ${q.cost.toFixed(2)}.`
+    let text = `Melhor opção para o pedido ${ped.origem} - ${ped.destino}. `
+    if (ped.prazo_desejado_dias) {
+      text += `Atende o prazo alvo com transit time de ${q.transit_time || '-'} dias e `
+    } else {
+      text += `Apresenta transit time de ${q.transit_time || '-'} dias e `
+    }
+    text += `custo total de US$ ${q.cost.toFixed(2)}.`
+    return text
   }
 
   const cota1List = quotations.filter((q) => q.expand?.cotacao_round_id?.nome_round === 'cota1')
@@ -111,7 +118,9 @@ export default function Ranking() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {list.map((q) => {
             const isWinner = quotations.length > 0 && q.id === quotations[0].id
-            const meetsDeadline = (q.transit_time || 0) <= (pedido?.prazo_desejado_dias || 999)
+            const meetsDeadline = pedido?.prazo_desejado_dias
+              ? (q.transit_time || 0) <= pedido.prazo_desejado_dias
+              : true
 
             return (
               <Card
@@ -168,12 +177,13 @@ export default function Ranking() {
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
                     <span className="text-slate-500">Transit Time</span>
                     <span className="font-medium text-slate-800 flex items-center gap-1">
-                      {q.transit_time} dias
-                      {meetsDeadline ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                      ) : (
-                        <XCircle className="h-3.5 w-3.5 text-red-500" />
-                      )}
+                      {q.transit_time ? `${q.transit_time} dias` : '-'}
+                      {pedido?.prazo_desejado_dias &&
+                        (meetsDeadline ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                        ) : (
+                          <XCircle className="h-3.5 w-3.5 text-red-500" />
+                        ))}
                     </span>
                   </div>
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
@@ -267,7 +277,8 @@ export default function Ranking() {
               {pedido.destino}
             </h2>
             <p className="text-slate-500">
-              Modal: {pedido.modal_desejado} | Prazo Alvo: {pedido.prazo_desejado_dias} dias
+              Modal: {pedido.modal_desejado} | Prazo Alvo:{' '}
+              {pedido.prazo_desejado_dias ? `${pedido.prazo_desejado_dias} dias` : 'Não definido'}
             </p>
           </div>
         )}

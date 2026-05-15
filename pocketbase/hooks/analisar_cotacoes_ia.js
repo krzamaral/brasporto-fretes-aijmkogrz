@@ -17,17 +17,16 @@ routerAdd(
       !body ||
       !body.pedido_id ||
       !body.cotacoes ||
-      body.prazo_desejado_dias === undefined ||
       !body.origem ||
       !body.destino ||
       body.peso_bruto === undefined ||
       !body.modal_desejado
     ) {
-      throw new BadRequestError('Todos os campos são obrigatórios.')
+      throw new BadRequestError('Campos obrigatórios ausentes.')
     }
 
     const cotacoes = body.cotacoes
-    const prazo_desejado = body.prazo_desejado_dias
+    const prazo_desejado = body.prazo_desejado_dias || 999
 
     let validas = []
     let descartadas = []
@@ -82,8 +81,8 @@ routerAdd(
       body.modal_desejado +
       '\n' +
       '- Prazo desejado: ' +
-      body.prazo_desejado_dias +
-      ' dias\n\n' +
+      (body.prazo_desejado_dias ? body.prazo_desejado_dias + ' dias' : 'Não definido') +
+      '\n\n' +
       'COTACAO VENCEDORA:\n' +
       '- Agente: ' +
       vencedora.agent_name +

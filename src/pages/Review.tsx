@@ -113,7 +113,7 @@ export default function Review() {
             let taxable = q.taxable_weight ? Number(q.taxable_weight) : null
 
             if (modal === 'Aéreo' && (!taxable || taxable <= 0)) {
-              taxable = Math.max(pedPeso, calcVolumetric)
+              taxable = Number(Math.max(pedPeso, calcVolumetric).toFixed(2))
             }
 
             return {
@@ -184,8 +184,9 @@ export default function Review() {
         const finalScore = Math.round(normC * 0.4 + normTT * 0.3 + normETD * 0.2 + normFT * 0.1)
 
         let compat = 100
-        let ttDiff = (q.transit_time || 30) - pedido.prazo_desejado_dias
-        if (ttDiff > 0) compat -= Math.min(100, ttDiff * 5)
+        const prazoDesejado = pedido.prazo_desejado_dias || 999
+        let ttDiff = (q.transit_time || 30) - prazoDesejado
+        if (ttDiff > 0 && prazoDesejado !== 999) compat -= Math.min(100, ttDiff * 5)
         if (q.modal !== pedido.modal_desejado) compat -= 20
 
         return createQuotation({
@@ -245,7 +246,8 @@ export default function Review() {
               <h4 className="font-semibold text-slate-800">Referência do Pedido</h4>
               <p className="text-sm text-slate-600">
                 {pedido.origem} → {pedido.destino} | {pedido.modal_desejado} | Prazo alvo:{' '}
-                {pedido.prazo_desejado_dias} dias | Peso: {pedido.peso_bruto}kg
+                {pedido.prazo_desejado_dias ? `${pedido.prazo_desejado_dias} dias` : 'Não definido'}{' '}
+                | Peso: {pedido.peso_bruto}kg
               </p>
             </div>
           </div>

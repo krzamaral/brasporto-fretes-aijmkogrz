@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-15T12:19:41.408Z",
+  "generatedAt": "2026-05-15T12:38:35.840Z",
   "collections": [
     {
       "name": "users",
@@ -240,7 +240,7 @@
         {
           "name": "prazo_desejado_dias",
           "type": "number",
-          "required": true,
+          "required": false,
           "system": false
         },
         {

@@ -47,7 +47,7 @@ const pedidoSchema = z.object({
   volume: z.number().optional().nullable(),
   tipo_mercadoria: z.string().optional(),
   modal_desejado: z.enum(['Aéreo', 'FCL', 'LCL']),
-  prazo_desejado_dias: z.number({ invalid_type_error: 'Obrigatório' }).min(1, 'Deve ser > 0'),
+  prazo_desejado_dias: z.number({ invalid_type_error: 'Deve ser um número' }).nullable().optional(),
 })
 
 type PedidoFormValues = z.infer<typeof pedidoSchema>
@@ -79,7 +79,7 @@ export default function Upload() {
       volume: null,
       tipo_mercadoria: '',
       modal_desejado: 'Aéreo',
-      prazo_desejado_dias: 30,
+      prazo_desejado_dias: null,
     },
   })
 
@@ -171,7 +171,9 @@ export default function Upload() {
           modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted.modal_desejado)
             ? extracted.modal_desejado
             : 'Aéreo',
-          prazo_desejado_dias: Number(extracted.prazo_desejado_dias) || 30,
+          prazo_desejado_dias: extracted.prazo_desejado_dias
+            ? Number(extracted.prazo_desejado_dias)
+            : null,
         })
         setStatus('form')
         toast({ title: 'Dados extraídos', description: 'Revise os dados do pedido abaixo.' })
@@ -351,7 +353,10 @@ export default function Upload() {
         modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(data.modal_desejado)
           ? (data.modal_desejado as 'Aéreo' | 'FCL' | 'LCL')
           : 'Aéreo',
-        prazo_desejado_dias: Number(data.prazo_desejado_dias),
+        prazo_desejado_dias:
+          data.prazo_desejado_dias !== null && data.prazo_desejado_dias !== undefined
+            ? Number(data.prazo_desejado_dias)
+            : (null as any),
         user_id: user.id,
         status: 'aguardando_cotacao' as const,
       }
@@ -382,6 +387,12 @@ export default function Upload() {
   const handleSkipCota2 = () => {
     navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote: null } })
   }
+
+  const watchedModal = form.watch('modal_desejado')
+  const watchedVolume = form.watch('volume')
+  const watchedPeso = form.watch('peso_bruto')
+  const pesoCubado = (watchedVolume || 0) * 166.667
+  const pesoTaxado = Math.max(watchedPeso || 0, pesoCubado)
 
   const renderContent = () => {
     if (status === 'loading') {
@@ -526,12 +537,18 @@ export default function Upload() {
                   name="prazo_desejado_dias"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Prazo Desejado (dias)</FormLabel>
+                      <FormLabel>
+                        Prazo Desejado (dias){' '}
+                        <span className="text-xs text-slate-400 font-normal">(Opcional)</span>
+                      </FormLabel>
                       <FormControl>
                         <Input
                           type="number"
                           {...field}
-                          onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
+                          value={field.value ?? ''}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
+                          }
                         />
                       </FormControl>
                       <FormMessage />
@@ -539,6 +556,38 @@ export default function Upload() {
                   )}
                 />
               </div>
+
+              {watchedModal === 'Aéreo' && (
+                <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-sm text-slate-700 animate-fade-in">
+                  <h4 className="font-semibold text-blue-900 mb-2">
+                    Cálculo de Peso Taxado (Aéreo)
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <span className="block text-slate-500 text-xs">Peso Bruto</span>
+                      <span className="font-medium">{watchedPeso || 0} kg</span>
+                    </div>
+                    <div>
+                      <span className="block text-slate-500 text-xs">
+                        Peso Cubado (Volume m³ × 166.667)
+                      </span>
+                      <span className="font-medium">
+                        {watchedVolume || 0} × 166.667 = {pesoCubado.toFixed(2)} kg
+                      </span>
+                    </div>
+                    <div className="bg-blue-100/50 px-3 py-1.5 rounded-md">
+                      <span className="block text-blue-800 text-xs font-semibold">
+                        Peso Taxado a considerar
+                      </span>
+                      <span className="font-bold text-blue-900">{pesoTaxado.toFixed(2)} kg</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-blue-600/80 mt-2">
+                    * O Peso Taxado é o maior valor entre o Peso Bruto e o Peso Cubado.
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-end pt-4">
                 <Button type="submit" className="bg-primary hover:bg-primary/90">
                   Salvar Pedido e Avançar <ChevronRight className="ml-2 h-4 w-4" />

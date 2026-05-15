@@ -8,7 +8,7 @@ export interface Pedido {
   volume?: number
   tipo_mercadoria?: string
   modal_desejado: 'Aéreo' | 'FCL' | 'LCL'
-  prazo_desejado_dias: number
+  prazo_desejado_dias?: number | null
   user_id: string
   status: 'aguardando_cotacao' | 'em_andamento' | 'concluido'
   created: string
