@@ -439,7 +439,7 @@ export default function Review() {
                                 onChange={(e) =>
                                   field.onChange(e.target.value ? parseFloat(e.target.value) : null)
                                 }
-                              />{' '}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -463,7 +463,7 @@ export default function Review() {
                                     e.target.value ? parseInt(e.target.value, 10) : null,
                                   )
                                 }
-                              />{' '}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
