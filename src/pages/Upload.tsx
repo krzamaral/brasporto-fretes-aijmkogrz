@@ -190,19 +190,25 @@ export default function Upload() {
         headers: { 'Content-Type': 'application/json' },
       })
 
-      const extracted = res.data?.data || res.data
+      const extracted = res?.data?.data || res?.data || res
+
+      if (!extracted || typeof extracted !== 'object') {
+        throw new Error(
+          'Não foi possível extrair os dados do documento. O formato retornado é inválido.',
+        )
+      }
 
       if (wizardStep === 1) {
         form.reset({
-          origem: extracted.origem || '',
-          destino: extracted.destino || '',
-          peso_bruto: Number(extracted.peso_bruto) || 0,
-          volume: Number(extracted.volume) || null,
-          tipo_mercadoria: extracted.tipo_mercadoria || '',
-          modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted.modal_desejado)
+          origem: extracted?.origem || '',
+          destino: extracted?.destino || '',
+          peso_bruto: Number(extracted?.peso_bruto) || 0,
+          volume: Number(extracted?.volume) || null,
+          tipo_mercadoria: extracted?.tipo_mercadoria || '',
+          modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted?.modal_desejado)
             ? extracted.modal_desejado
             : 'Aéreo',
-          prazo_desejado_dias: extracted.prazo_desejado_dias
+          prazo_desejado_dias: extracted?.prazo_desejado_dias
             ? Number(extracted.prazo_desejado_dias)
             : null,
         })
@@ -210,19 +216,23 @@ export default function Upload() {
         toast({ title: 'Dados extraídos', description: 'Revise os dados do pedido abaixo.' })
       } else if (wizardStep === 2) {
         let quotes = []
-        if (extracted.type === 'multiple' && Array.isArray(extracted.quotations)) {
+        if (extracted?.type === 'multiple' && Array.isArray(extracted?.quotations)) {
           quotes = extracted.quotations
-        } else if (extracted.type === 'single' && extracted.data) {
+        } else if (extracted?.type === 'single' && extracted?.data) {
           quotes = [extracted.data]
-        } else if (Array.isArray(extracted.quotations)) {
+        } else if (Array.isArray(extracted?.quotations)) {
           quotes = extracted.quotations
-        } else if (Array.isArray(extracted.quotes)) {
+        } else if (Array.isArray(extracted?.quotes)) {
           quotes = extracted.quotes
         } else {
           quotes = Array.isArray(extracted) ? extracted : [extracted]
         }
 
         if (!pedidoId) throw new Error('Pedido ID ausente. Volte à etapa 1.')
+
+        if (quotes.length === 0) {
+          throw new Error('Nenhuma cotação foi encontrada no documento.')
+        }
 
         const round = await createCotacaoRound({
           pedido_id: pedidoId,
@@ -232,17 +242,17 @@ export default function Upload() {
 
         const createdQuotes = []
         for (const q of quotes) {
-          const modal = ['Aéreo', 'FCL', 'LCL'].includes(q.modal)
+          const modal = ['Aéreo', 'FCL', 'LCL'].includes(q?.modal)
             ? (q.modal as 'Aéreo' | 'FCL' | 'LCL')
             : 'Aéreo'
           const mappedQ = {
-            agent_name: q.agent_name || 'Desconhecido',
+            agent_name: q?.agent_name || 'Desconhecido',
             modal,
-            cost: Number(q.cost) || 0,
-            transit_time: q.transit_time ? Number(q.transit_time) : undefined,
-            free_time: q.free_time ? Number(q.free_time) : undefined,
-            taxable_weight: q.taxable_weight ? Number(q.taxable_weight) : undefined,
-            etd: q.etd || undefined,
+            cost: Number(q?.cost) || 0,
+            transit_time: q?.transit_time ? Number(q.transit_time) : undefined,
+            free_time: q?.free_time ? Number(q.free_time) : undefined,
+            taxable_weight: q?.taxable_weight ? Number(q.taxable_weight) : undefined,
+            etd: q?.etd || undefined,
             cotacao_round_id: round.id,
             pedido_id: pedidoId,
             user_id: user.id,
@@ -263,7 +273,7 @@ export default function Upload() {
           try {
             await pb.collection('extracted_data').create({
               quotation_id: createdQ.id,
-              raw_data: q,
+              raw_data: q || {},
             })
           } catch (err) {
             console.error('Failed to save extracted data:', err)
@@ -276,15 +286,23 @@ export default function Upload() {
         toast({ title: 'Cotações Extraídas', description: 'Rodada 1 concluída. Envie a Rodada 2.' })
       } else if (wizardStep === 3) {
         let q =
-          extracted.type === 'single' && extracted.data
+          extracted?.type === 'single' && extracted?.data
             ? extracted.data
-            : Array.isArray(extracted.quotations) && extracted.quotations.length > 0
+            : Array.isArray(extracted?.quotations) && extracted.quotations.length > 0
               ? extracted.quotations[0]
-              : Array.isArray(extracted.quotes) && extracted.quotes.length > 0
+              : Array.isArray(extracted?.quotes) && extracted.quotes.length > 0
                 ? extracted.quotes[0]
                 : extracted
 
         if (!pedidoId) throw new Error('Pedido ID ausente. Volte à etapa 1.')
+
+        if (!q || Array.isArray(q)) {
+          q = Array.isArray(q) && q.length > 0 ? q[0] : null
+        }
+
+        if (!q) {
+          throw new Error('Nenhuma cotação foi encontrada no documento.')
+        }
 
         const round = await createCotacaoRound({
           pedido_id: pedidoId,
@@ -292,17 +310,17 @@ export default function Upload() {
           user_id: user.id,
         })
 
-        const modal = ['Aéreo', 'FCL', 'LCL'].includes(q.modal)
+        const modal = ['Aéreo', 'FCL', 'LCL'].includes(q?.modal)
           ? (q.modal as 'Aéreo' | 'FCL' | 'LCL')
           : 'Aéreo'
         const mappedQ = {
-          agent_name: q.agent_name || 'Desconhecido',
+          agent_name: q?.agent_name || 'Desconhecido',
           modal,
-          cost: Number(q.cost) || 0,
-          transit_time: q.transit_time ? Number(q.transit_time) : undefined,
-          free_time: q.free_time ? Number(q.free_time) : undefined,
-          taxable_weight: q.taxable_weight ? Number(q.taxable_weight) : undefined,
-          etd: q.etd || undefined,
+          cost: Number(q?.cost) || 0,
+          transit_time: q?.transit_time ? Number(q.transit_time) : undefined,
+          free_time: q?.free_time ? Number(q.free_time) : undefined,
+          taxable_weight: q?.taxable_weight ? Number(q.taxable_weight) : undefined,
+          etd: q?.etd || undefined,
           cotacao_round_id: round.id,
           pedido_id: pedidoId,
           user_id: user.id,
@@ -322,7 +340,7 @@ export default function Upload() {
         try {
           await pb.collection('extracted_data').create({
             quotation_id: cota2Quote.id,
-            raw_data: q,
+            raw_data: q || {},
           })
         } catch (err) {
           console.error('Failed to save extracted data:', err)
