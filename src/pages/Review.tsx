@@ -23,6 +23,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { getPedido, updatePedido, Pedido } from '@/services/pedidos'
+import { useRealtime } from '@/hooks/use-realtime'
 import { createCotacaoRound } from '@/services/cotacao_rounds'
 import { createQuotation } from '@/services/quotations'
 import { useForm, useFieldArray } from 'react-hook-form'
@@ -77,6 +78,28 @@ export default function Review() {
   })
 
   const { fields } = useFieldArray({ control: form.control, name: 'quotes' })
+
+  useRealtime('extracted_data', (e) => {
+    if (e.action === 'create' || e.action === 'update') {
+      toast({
+        title: 'Nova extração sincronizada',
+        description: 'Dados foram extraídos de novos documentos em background.',
+      })
+    }
+  })
+
+  useRealtime(
+    'quotations',
+    (e) => {
+      if (e.action === 'create' && e.record.pedido_id === pedido?.id) {
+        toast({
+          title: 'Nova cotação adicionada',
+          description: 'Uma cotação foi registrada recentemente neste pedido.',
+        })
+      }
+    },
+    !!pedido?.id,
+  )
 
   useEffect(() => {
     async function loadData() {
@@ -266,10 +289,13 @@ export default function Review() {
             <Info className="h-5 w-5 text-blue-500 mt-0.5" />
             <div>
               <h4 className="font-semibold text-slate-800">Referência do Pedido</h4>
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-slate-600 mb-1">
                 {pedido.origem} → {pedido.destino} | {pedido.modal_desejado} | Prazo alvo:{' '}
                 {pedido.prazo_desejado_dias ? `${pedido.prazo_desejado_dias} dias` : 'Não definido'}{' '}
                 | Peso: {pedido.peso_bruto}kg
+              </p>
+              <p className="text-sm text-slate-500">
+                Mercadoria: {pedido.tipo_mercadoria || 'Não especificada no documento'}
               </p>
             </div>
           </div>
@@ -289,19 +315,35 @@ export default function Review() {
                   className="p-5 border-slate-200 shadow-sm relative overflow-hidden"
                 >
                   <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-                  <div className="flex items-center justify-between mb-4 ml-2">
-                    <h3 className="font-semibold text-slate-800">
-                      Opção {index + 1}{' '}
-                      <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
-                        {roundLabel}
-                      </span>
-                    </h3>
-                    {Object.keys(form.formState.errors?.quotes?.[index] || {}).length > 0 && (
-                      <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full flex items-center">
-                        <Info className="w-3 h-3 mr-1" />
-                        Incompleta / Crítica
-                      </span>
+                  <div className="flex flex-col gap-2 mb-4 ml-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-slate-800">
+                        Opção {index + 1}{' '}
+                        <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
+                          {roundLabel}
+                        </span>
+                      </h3>
+                      {Object.keys(form.formState.errors?.quotes?.[index] || {}).length > 0 && (
+                        <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded-full flex items-center">
+                          <Info className="w-3 h-3 mr-1" />
+                          Incompleta / Crítica
+                        </span>
+                      )}
+                    </div>
+                    {modalValue === 'FCL' && form.watch(`quotes.${index}.free_time`) == null && (
+                      <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded flex items-center gap-2">
+                        <Info className="w-4 h-4" />
+                        Aviso: Free Time é obrigatório para modal FCL e não foi localizado.
+                      </div>
                     )}
+                    {modalValue === 'Aéreo' &&
+                      (form.watch(`quotes.${index}.taxable_weight`) == null ||
+                        form.watch(`quotes.${index}.taxable_weight`)! <= 0) && (
+                        <div className="text-sm text-amber-600 bg-amber-50 p-2 rounded flex items-center gap-2">
+                          <Info className="w-4 h-4" />
+                          Aviso: Peso Taxável é obrigatório para modal Aéreo.
+                        </div>
+                      )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 ml-2">
                     <FormField
@@ -344,7 +386,11 @@ export default function Review() {
                       name={`quotes.${index}.cost`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Custo (US$)</FormLabel>
+                          <FormLabel>
+                            {modalValue === 'Aéreo'
+                              ? 'Custo Total da Remessa (US$)'
+                              : 'Custo Total (US$)'}
+                          </FormLabel>
                           <FormControl>
                             <Input
                               type="number"

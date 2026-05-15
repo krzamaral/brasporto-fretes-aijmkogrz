@@ -12,22 +12,28 @@ import {
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { getPedidos, type Pedido } from '@/services/pedidos'
+import { useRealtime } from '@/hooks/use-realtime'
 
 export default function Dashboard() {
   const [activePedidos, setActivePedidos] = useState<Pedido[]>([])
   const navigate = useNavigate()
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const data = await getPedidos()
-        setActivePedidos(data.filter((p) => p.status !== 'concluido'))
-      } catch (e) {
-        console.error(e)
-      }
+  const loadData = async () => {
+    try {
+      const data = await getPedidos()
+      setActivePedidos(data.filter((p) => p.status !== 'concluido'))
+    } catch (e) {
+      console.error(e)
     }
+  }
+
+  useEffect(() => {
     loadData()
   }, [])
+
+  useRealtime('pedidos', () => {
+    loadData()
+  })
 
   return (
     <div className="space-y-8 animate-fade-in">
