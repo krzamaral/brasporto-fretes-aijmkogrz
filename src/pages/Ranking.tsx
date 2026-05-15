@@ -96,10 +96,14 @@ export default function Ranking() {
 
   const generateJustification = (q: Quotation, ped: Pedido) => {
     let text = `Melhor opção para o pedido ${ped.origem} - ${ped.destino}. `
-    if (ped.prazo_desejado_dias) {
-      text += `Atende o prazo alvo com transit time de ${q.transit_time || '-'} dias e `
+    if (
+      ped.prazo_desejado_dias &&
+      q.transit_time != null &&
+      q.transit_time <= ped.prazo_desejado_dias
+    ) {
+      text += `Atende o prazo alvo com transit time de ${q.transit_time} dias e `
     } else {
-      text += `Apresenta transit time de ${q.transit_time || '-'} dias e `
+      text += `Apresenta transit time de ${q.transit_time != null ? q.transit_time : '-'} dias e `
     }
     text += `custo total de US$ ${q.cost.toFixed(2)}.`
     return text
@@ -118,9 +122,10 @@ export default function Ranking() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {list.map((q) => {
             const isWinner = quotations.length > 0 && q.id === quotations[0].id
-            const meetsDeadline = pedido?.prazo_desejado_dias
-              ? (q.transit_time || 0) <= pedido.prazo_desejado_dias
-              : true
+            const meetsDeadline =
+              pedido?.prazo_desejado_dias && q.transit_time != null
+                ? q.transit_time <= pedido.prazo_desejado_dias
+                : false
 
             return (
               <Card
@@ -171,14 +176,17 @@ export default function Ranking() {
 
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
-                    <span className="text-slate-500">Custo Total</span>
+                    <span className="text-slate-500">
+                      {q.modal === 'Aéreo' ? 'Frete Total' : 'Custo Total'}
+                    </span>
                     <span className="font-semibold text-slate-800">US$ {q.cost.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
                     <span className="text-slate-500">Transit Time</span>
                     <span className="font-medium text-slate-800 flex items-center gap-1">
-                      {q.transit_time ? `${q.transit_time} dias` : '-'}
+                      {q.transit_time != null ? `${q.transit_time} dias` : '-'}
                       {pedido?.prazo_desejado_dias &&
+                        q.transit_time != null &&
                         (meetsDeadline ? (
                           <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
                         ) : (
@@ -188,14 +196,27 @@ export default function Ranking() {
                   </div>
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
                     <span className="text-slate-500">Free Time</span>
-                    <span className="font-medium text-slate-800">{q.free_time || 0} dias</span>
+                    <span className="font-medium text-slate-800">
+                      {q.free_time != null ? `${q.free_time} dias` : '-'}
+                    </span>
                   </div>
                   {q.modal === 'Aéreo' && (
                     <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
                       <span className="text-slate-500">Peso Taxável</span>
-                      <span className="font-medium text-slate-800">
-                        {q.taxable_weight ? `${q.taxable_weight.toFixed(2)} kg` : '-'}
-                      </span>
+                      <div className="text-right">
+                        <div className="font-medium text-slate-800">
+                          {q.taxable_weight ? `${q.taxable_weight.toFixed(2)} kg` : '-'}
+                        </div>
+                        {q.taxable_weight && pedido && (
+                          <div className="text-[10px] text-slate-400">
+                            (Baseado em{' '}
+                            {q.taxable_weight > (pedido.peso_bruto || 0)
+                              ? 'Peso Cubado'
+                              : 'Peso Real'}
+                            )
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">

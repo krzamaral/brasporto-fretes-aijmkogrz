@@ -112,7 +112,7 @@ export default function Review() {
             const modal = ['Aéreo', 'FCL', 'LCL'].includes(q.modal) ? q.modal : ped.modal_desejado
             let taxable = q.taxable_weight ? Number(q.taxable_weight) : null
 
-            if (modal === 'Aéreo' && (!taxable || taxable <= 0)) {
+            if (modal === 'Aéreo') {
               taxable = Number(Math.max(pedPeso, calcVolumetric).toFixed(2))
             }
 
@@ -142,19 +142,23 @@ export default function Review() {
     setIsSubmitting(true)
     try {
       const getEtdDays = (etd?: string | null) =>
-        etd ? Math.max(0, (new Date(etd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 30
+        etd ? Math.max(0, (new Date(etd).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null
+
       const costs = data.quotes.map((q) => q.cost)
-      const maxC = Math.max(...costs),
-        minC = Math.min(...costs)
-      const tts = data.quotes.map((q) => q.transit_time || 30)
-      const maxTT = Math.max(...tts),
-        minTT = Math.min(...tts)
-      const etds = data.quotes.map((q) => getEtdDays(q.etd))
-      const maxETD = Math.max(...etds),
-        minETD = Math.min(...etds)
-      const fts = data.quotes.map((q) => q.free_time || 0)
-      const maxFT = Math.max(...fts),
-        minFT = Math.min(...fts)
+      const maxC = Math.max(...costs)
+      const minC = Math.min(...costs)
+
+      const tts = data.quotes.map((q) => q.transit_time).filter((v): v is number => v != null)
+      const maxTT = tts.length > 0 ? Math.max(...tts) : 0
+      const minTT = tts.length > 0 ? Math.min(...tts) : 0
+
+      const etds = data.quotes.map((q) => getEtdDays(q.etd)).filter((v): v is number => v != null)
+      const maxETD = etds.length > 0 ? Math.max(...etds) : 0
+      const minETD = etds.length > 0 ? Math.min(...etds) : 0
+
+      const fts = data.quotes.map((q) => q.free_time).filter((v): v is number => v != null)
+      const maxFT = fts.length > 0 ? Math.max(...fts) : 0
+      const minFT = fts.length > 0 ? Math.min(...fts) : 0
 
       const avgCost = costs.length > 0 ? costs.reduce((a, b) => a + b, 0) / costs.length : 1
 
@@ -174,29 +178,47 @@ export default function Review() {
       const promises = data.quotes.map((q) => {
         // N = (C * 0.40) + (TT * 0.30) + (ETD * 0.20) + (FT * 0.10)
         const normC = maxC === minC ? 100 : ((maxC - q.cost) / (maxC - minC)) * 100
+
         const normTT =
-          maxTT === minTT ? 100 : ((maxTT - (q.transit_time || 30)) / (maxTT - minTT)) * 100
+          q.transit_time != null
+            ? maxTT === minTT
+              ? 100
+              : ((maxTT - q.transit_time) / (maxTT - minTT)) * 100
+            : 0
+
+        const qEtdDays = getEtdDays(q.etd)
         const normETD =
-          maxETD === minETD ? 100 : ((maxETD - getEtdDays(q.etd)) / (maxETD - minETD)) * 100
+          qEtdDays != null
+            ? maxETD === minETD
+              ? 100
+              : ((maxETD - qEtdDays) / (maxETD - minETD)) * 100
+            : 0
+
         const normFT =
-          maxFT === minFT ? 100 : (((q.free_time || 0) - minFT) / (maxFT - minFT)) * 100
+          q.free_time != null
+            ? maxFT === minFT
+              ? 100
+              : ((q.free_time - minFT) / (maxFT - minFT)) * 100
+            : 0
 
         const finalScore = Math.round(normC * 0.4 + normTT * 0.3 + normETD * 0.2 + normFT * 0.1)
 
         let compat = 100
-        const prazoDesejado = pedido.prazo_desejado_dias || 999
-        let ttDiff = (q.transit_time || 30) - prazoDesejado
-        if (ttDiff > 0 && prazoDesejado !== 999) compat -= Math.min(100, ttDiff * 5)
+        const prazoDesejado = pedido.prazo_desejado_dias
+        if (prazoDesejado != null && q.transit_time != null) {
+          const ttDiff = q.transit_time - prazoDesejado
+          if (ttDiff > 0) compat -= Math.min(100, ttDiff * 5)
+        }
         if (q.modal !== pedido.modal_desejado) compat -= 20
 
         return createQuotation({
           agent_name: q.agent_name,
           modal: q.modal,
           cost: q.cost,
-          transit_time: q.transit_time || undefined,
-          free_time: q.free_time || undefined,
-          etd: q.etd || undefined,
-          taxable_weight: q.taxable_weight || undefined,
+          transit_time: q.transit_time ?? undefined,
+          free_time: q.free_time ?? undefined,
+          etd: q.etd ?? undefined,
+          taxable_weight: q.taxable_weight ?? undefined,
           score: finalScore,
           compatibilidade_score: Math.round(compat),
           pedido_id: pedido.id,
@@ -345,8 +367,10 @@ export default function Review() {
                             <Input
                               type="number"
                               {...field}
-                              value={field.value || ''}
-                              onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
+                              value={field.value ?? ''}
+                              onChange={(e) =>
+                                field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
+                              }
                             />
                           </FormControl>
                           <FormMessage />
@@ -365,9 +389,11 @@ export default function Review() {
                                 type="number"
                                 step="0.1"
                                 {...field}
-                                value={field.value || ''}
-                                onChange={(e) => field.onChange(parseFloat(e.target.value))}
-                              />
+                                value={field.value ?? ''}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                                }
+                              />{' '}
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -385,9 +411,13 @@ export default function Review() {
                               <Input
                                 type="number"
                                 {...field}
-                                value={field.value || ''}
-                                onChange={(e) => field.onChange(parseInt(e.target.value, 10))}
-                              />
+                                value={field.value ?? ''}
+                                onChange={(e) =>
+                                  field.onChange(
+                                    e.target.value ? parseInt(e.target.value, 10) : null,
+                                  )
+                                }
+                              />{' '}
                             </FormControl>
                             <FormMessage />
                           </FormItem>

@@ -32,15 +32,18 @@ routerAdd(
     let descartadas = []
 
     for (let c of cotacoes) {
-      let tt = c.transit_time || 0
-      if (tt / prazo_desejado > 1.2) {
-        descartadas.push(c)
+      if (prazo_desejado !== 999 && c.transit_time != null) {
+        if (c.transit_time / prazo_desejado > 1.2) {
+          descartadas.push(c)
+        } else {
+          validas.push(c)
+        }
       } else {
         validas.push(c)
       }
     }
 
-    if (validas.length === 0) {
+    if (validas.length === 0 && cotacoes.length > 0) {
       throw new BadRequestError('Nenhuma cotacao atende o prazo maximo de 20%')
     }
 
@@ -57,11 +60,11 @@ routerAdd(
           (c) =>
             '- Agente: ' +
             c.agent_name +
-            ', Custo: US$ ' +
+            ', Custo Total: US$ ' +
             c.cost +
             ', Prazo: ' +
-            c.transit_time +
-            ' dias (Motivo: Prazo excedeu 120% do desejado)',
+            (c.transit_time != null ? c.transit_time + ' dias' : 'N/A') +
+            ' (Motivo: Prazo excedeu 120% do desejado)',
         )
         .join('\n') || 'Nenhuma'
 
@@ -90,21 +93,21 @@ routerAdd(
       '- Modal: ' +
       vencedora.modal +
       '\n' +
-      '- Custo: US$ ' +
+      '- Custo Total: US$ ' +
       vencedora.cost +
       '\n' +
       '- Prazo: ' +
-      vencedora.transit_time +
-      ' dias\n' +
+      (vencedora.transit_time != null ? vencedora.transit_time + ' dias' : 'N/A') +
+      '\n' +
       '- ETD: ' +
       (vencedora.etd || 'N/A') +
       '\n' +
       '- Free Time: ' +
-      (vencedora.free_time || 0) +
-      ' dias\n' +
+      (vencedora.free_time != null ? vencedora.free_time + ' dias' : 'N/A') +
+      '\n' +
       '- Peso Taxavel: ' +
-      (vencedora.taxable_weight || 0) +
-      ' kg\n\n' +
+      (vencedora.taxable_weight != null ? vencedora.taxable_weight + ' kg' : 'N/A') +
+      '\n\n' +
       'COTACOES DESCARTADAS (motivo):\n' +
       descartadasTexto +
       '\n\n' +
