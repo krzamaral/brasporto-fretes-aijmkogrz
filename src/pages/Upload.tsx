@@ -128,6 +128,14 @@ export default function Upload() {
       return
     }
 
+    if (file.size === 0) {
+      const msg = 'O arquivo selecionado está vazio.'
+      setErrorMessage(msg)
+      setStatus('error')
+      toast({ title: 'Arquivo inválido', description: msg, variant: 'destructive' })
+      return
+    }
+
     if (file.size > 5 * 1024 * 1024) {
       const msg = 'Tamanho máximo permitido é 5MB.'
       setErrorMessage(msg)
@@ -140,6 +148,17 @@ export default function Upload() {
 
     try {
       const base64Data = await toBase64(file)
+
+      if (!base64Data || base64Data.trim() === '') {
+        throw new Error(
+          'O arquivo selecionado parece estar vazio ou não pôde ser lido. Nenhum conteúdo pôde ser extraído.',
+        )
+      }
+
+      if (!base64Data.startsWith('JVBERi0')) {
+        throw new Error('O arquivo selecionado não é um documento PDF válido.')
+      }
+
       const docType = wizardStep === 1 ? 'pedido' : wizardStep === 2 ? 'cota1' : 'cota2'
 
       const payload: Record<string, any> = {
@@ -303,10 +322,13 @@ export default function Upload() {
 
       if (err?.status === 400) {
         const validationMsg = getErrorMessage(err)
+        const isGeneric =
+          validationMsg === 'An unexpected error occurred.' ||
+          validationMsg === 'Something went wrong while processing your request.'
         errorMsg =
-          validationMsg !== 'An unexpected error occurred.' && validationMsg
+          !isGeneric && validationMsg
             ? validationMsg
-            : 'Os dados extraídos estão inválidos. Verifique o documento e tente novamente.'
+            : 'Os dados extraídos estão inválidos ou incompletos. Verifique o documento e tente novamente.'
       } else if (err?.status === 413) {
         errorMsg = 'O arquivo é muito grande para ser processado.'
       } else if (err?.status >= 500) {
@@ -315,7 +337,10 @@ export default function Upload() {
         errorMsg = 'A requisição foi cancelada (tempo limite). Verifique sua conexão.'
       } else {
         const apiMsg = getErrorMessage(err)
-        if (apiMsg && apiMsg !== 'An unexpected error occurred.') {
+        const isGeneric =
+          apiMsg === 'An unexpected error occurred.' ||
+          apiMsg === 'Something went wrong while processing your request.'
+        if (!isGeneric && apiMsg) {
           errorMsg = apiMsg
         }
       }
