@@ -39,6 +39,9 @@ import { createPedido } from '@/services/pedidos'
 import { createCotacaoRound } from '@/services/cotacao_rounds'
 import { createQuotation } from '@/services/quotations'
 import { useAuth } from '@/hooks/use-auth'
+import * as pdfjsLib from 'pdfjs-dist'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`
 
 const pedidoSchema = z.object({
   origem: z.string().min(1, 'Obrigatório'),
@@ -93,13 +96,23 @@ export default function Upload() {
     setIsDragging(false)
   }
 
-  const toBase64 = (file: File) =>
-    new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = () => resolve((reader.result as string).replace(/^data:.*?;base64,/, ''))
-      reader.onerror = (error) => reject(error)
-    })
+  const extractTextFromPdf = async (file: File): Promise<string> => {
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+      let fullText = ''
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const textContent = await page.getTextContent()
+        const pageText = textContent.items.map((item: any) => item.str).join(' ')
+        fullText += pageText + '\n'
+      }
+      return fullText
+    } catch (error) {
+      console.error('Error extracting text from PDF:', error)
+      return ''
+    }
+  }
 
   const processFile = async (file: File) => {
     setErrorMessage('')
@@ -147,22 +160,21 @@ export default function Upload() {
     setStatus('loading')
 
     try {
-      const base64Data = await toBase64(file)
+      const extractedText = await extractTextFromPdf(file)
 
-      if (!base64Data || base64Data.trim() === '') {
-        throw new Error(
-          'O arquivo selecionado parece estar vazio ou não pôde ser lido. Nenhum conteúdo pôde ser extraído.',
-        )
-      }
-
-      if (!base64Data.startsWith('JVBERi0')) {
-        throw new Error('O arquivo selecionado não é um documento PDF válido.')
+      if (!extractedText || extractedText.trim().length === 0) {
+        const msg =
+          'Nenhum texto detectado no documento. Por favor, verifique se o PDF contém texto selecionável ou tente outro arquivo.'
+        setErrorMessage(msg)
+        setStatus('error')
+        toast({ title: 'Arquivo inválido', description: msg, variant: 'destructive' })
+        return
       }
 
       const docType = wizardStep === 1 ? 'pedido' : wizardStep === 2 ? 'cota1' : 'cota2'
 
       const payload: Record<string, any> = {
-        pdfBase64: base64Data,
+        text: extractedText,
         docType,
         userId: user.id,
         step: wizardStep,
@@ -200,8 +212,12 @@ export default function Upload() {
         let quotes = []
         if (extracted.type === 'multiple' && Array.isArray(extracted.quotations)) {
           quotes = extracted.quotations
-        } else if (extracted.type === 'single') {
+        } else if (extracted.type === 'single' && extracted.data) {
           quotes = [extracted.data]
+        } else if (Array.isArray(extracted.quotations)) {
+          quotes = extracted.quotations
+        } else if (Array.isArray(extracted.quotes)) {
+          quotes = extracted.quotes
         } else {
           quotes = Array.isArray(extracted) ? extracted : [extracted]
         }
@@ -260,11 +276,13 @@ export default function Upload() {
         toast({ title: 'Cotações Extraídas', description: 'Rodada 1 concluída. Envie a Rodada 2.' })
       } else if (wizardStep === 3) {
         let q =
-          extracted.type === 'single'
+          extracted.type === 'single' && extracted.data
             ? extracted.data
-            : Array.isArray(extracted.quotations)
+            : Array.isArray(extracted.quotations) && extracted.quotations.length > 0
               ? extracted.quotations[0]
-              : extracted
+              : Array.isArray(extracted.quotes) && extracted.quotes.length > 0
+                ? extracted.quotes[0]
+                : extracted
 
         if (!pedidoId) throw new Error('Pedido ID ausente. Volte à etapa 1.')
 

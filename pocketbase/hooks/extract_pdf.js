@@ -26,9 +26,14 @@ ${text}
 
 Retorne APENAS um JSON válido (sem blocos de markdown adicionais) com a seguinte estrutura exata:
 {
+  "origem": "Origem extraída ou null",
+  "destino": "Destino extraído ou null",
+  "peso_bruto": 100.5,
+  "volume": 0.5,
+  "modal_desejado": "Aéreo",
   "tipo_mercadoria": "Descrição exata ou null",
   "prazo_desejado_dias": 20, 
-  "quotes": [
+  "quotations": [
     {
       "agent_name": "Nome do Agente",
       "modal": "Aéreo", 
