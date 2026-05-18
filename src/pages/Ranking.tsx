@@ -166,6 +166,7 @@ export default function Ranking() {
           @page { margin: 10mm; size: landscape; }
           body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; }
           .print-hidden { display: none !important; }
+          .print\\:block { display: block !important; }
           table { page-break-inside: auto; max-width: 100% !important; }
           tr { page-break-inside: avoid; page-break-after: auto; }
           td, th { page-break-inside: avoid; }
@@ -458,7 +459,7 @@ export default function Ranking() {
                 <Th rowSpan={2} className="w-[6%]">
                   MODAL
                 </Th>
-                <Th colSpan={4}>CUSTOS (USD)</Th>
+                <Th colSpan={4}>MEMÓRIA DE CÁLCULO (USD)</Th>
                 <Th colSpan={3}>OPERAÇÃO</Th>
                 <Th colSpan={3}>VALIDAÇÃO (x LOGÍSTICA)</Th>
                 <Th rowSpan={2} className="w-[8%]">
@@ -471,19 +472,19 @@ export default function Ranking() {
               </tr>
               <tr>
                 <Th>
-                  Frete
+                  Unitário do Frete
                   <br />
-                  Unitário
+                  (USD/KG)
                 </Th>
                 <Th>
-                  Total Frete
+                  Total do Frete
                   <br />
                   Peso
                 </Th>
                 <Th>
-                  Taxas de
+                  Despesas e Taxas
                   <br />
-                  Origem
+                  de Origem
                 </Th>
                 <Th className="bg-slate-200 text-slate-900">
                   Valor
@@ -804,15 +805,21 @@ export default function Ranking() {
         </div>
 
         {/* AI Recommendation Box */}
-        <div className="border border-slate-300 bg-slate-50 rounded-sm mt-6">
+        <div className="border border-slate-300 bg-slate-50 rounded-sm mt-6 print:break-inside-avoid">
           <div className="bg-[#00749b]/10 text-[#00749b] font-bold px-4 py-2 text-[11px] uppercase tracking-wide border-b border-slate-300 flex justify-between items-center">
-            <span>Comentário sobre a opção indicada</span>
+            <span>Análise de Decisão</span>
             {isAiLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-[#00749b]" />}
           </div>
-          <div className="p-4 text-sm text-slate-700 leading-relaxed font-medium min-h-[80px] whitespace-pre-wrap">
-            {aiComment
-              ? aiComment
-              : 'Gere uma análise com IA ou insira seu comentário para justificar a escolha.'}
+          <div className="p-4 text-sm text-slate-700 leading-relaxed font-medium min-h-[80px] whitespace-pre-wrap print-hidden">
+            <textarea
+              className="w-full min-h-[100px] bg-white border border-slate-300 p-3 rounded-md focus:outline-none focus:ring-2 focus:ring-[#00749b] resize-y"
+              value={aiComment}
+              onChange={(e) => setAiComment(e.target.value)}
+              placeholder="Gere uma análise com IA ou insira seu comentário para justificar a escolha."
+            />
+          </div>
+          <div className="hidden print:block p-4 text-sm text-slate-700 leading-relaxed font-medium min-h-[80px] whitespace-pre-wrap">
+            {aiComment || 'Nenhuma análise informada.'}
           </div>
         </div>
       </div>
