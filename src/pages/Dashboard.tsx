@@ -1,141 +1,55 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import {
-  FolderOpen,
-  PlusCircle,
-  ArrowRight,
-  Ship,
-  Plane,
-  History as HistoryIcon,
-  Clock,
-} from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { UploadCloud, History as HistoryIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { getPedidos, type Pedido } from '@/services/pedidos'
-import { useRealtime } from '@/hooks/use-realtime'
+import logoUrl from '@/assets/logo-color-ad1d0.png'
 
 export default function Dashboard() {
-  const [activePedidos, setActivePedidos] = useState<Pedido[]>([])
   const navigate = useNavigate()
 
-  const loadData = async () => {
-    try {
-      const data = await getPedidos()
-      setActivePedidos(data.filter((p) => p.status !== 'concluido'))
-    } catch (e) {
-      console.error(e)
-    }
-  }
-
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  useRealtime('pedidos', () => {
-    loadData()
-  })
-
   return (
-    <div className="space-y-8 animate-fade-in">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-800">Painel de Cotações</h2>
-          <p className="text-muted-foreground">Gerencie seus pedidos de frete ativos.</p>
-        </div>
-        <Button
-          onClick={() => navigate('/upload')}
-          className="bg-primary hover:bg-primary/90 text-white"
-        >
-          <PlusCircle className="mr-2 h-4 w-4" /> Novo Pedido
-        </Button>
+    <div className="flex flex-col items-center justify-center min-h-[70vh] animate-fade-in space-y-8">
+      <div className="text-center space-y-6 max-w-2xl mx-auto">
+        <img src={logoUrl} alt="Brasporto" className="h-16 mx-auto object-contain mb-8" />
+
+        <h1 className="text-3xl font-bold tracking-tight text-slate-800">
+          Bem-vindo ao Brasporto Fretes
+        </h1>
+        <p className="text-lg text-slate-500">
+          Inicie um novo processo de cotação de fretes de forma rápida e centralizada. Faça o upload
+          dos documentos e nós cuidamos do resto.
+        </p>
       </div>
 
-      <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm">
-        {activePedidos.length === 0 ? (
-          <div className="py-12 flex flex-col items-center justify-center text-center">
-            <div className="h-16 w-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-              <FolderOpen className="h-8 w-8 text-slate-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-800 mb-2">
-              Nenhum pedido em andamento
-            </h3>
-            <p className="text-slate-500 mb-6 max-w-sm">
-              Inicie um novo fluxo de cotação fazendo o upload da solicitação de carga.
-            </p>
-            <Button onClick={() => navigate('/upload')} variant="outline">
-              Iniciar Cotação
-            </Button>
-          </div>
-        ) : (
-          <div>
-            <h3 className="text-lg font-semibold text-slate-800 mb-6">
-              Pedidos Aguardando Cotação ({activePedidos.length})
-            </h3>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {activePedidos.map((p) => (
-                <Card
-                  key={p.id}
-                  className="p-5 border-slate-200 shadow-sm hover:shadow-md transition-shadow relative"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <span className="font-semibold text-slate-800 text-sm">
-                      {p.origem} <ArrowRight className="inline h-3 w-3 text-slate-400" />{' '}
-                      {p.destino}
-                    </span>
-                    {p.modal_desejado === 'Aéreo' ? (
-                      <Plane className="h-4 w-4 text-blue-500" />
-                    ) : (
-                      <Ship className="h-4 w-4 text-blue-500" />
-                    )}
-                  </div>
-                  <div className="space-y-1.5 text-sm text-slate-600 mb-5">
-                    <p className="flex justify-between">
-                      <span className="text-slate-500">Peso:</span>{' '}
-                      <span className="font-medium">{p.peso_bruto} kg</span>
-                    </p>
-                    <p className="flex justify-between">
-                      <span className="text-slate-500">Prazo Alvo:</span>{' '}
-                      <span className="font-medium">{p.prazo_desejado_dias} dias</span>
-                    </p>
-                    <p className="flex justify-between items-center">
-                      <span className="text-slate-500">Status:</span>{' '}
-                      <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full font-medium flex items-center gap-1">
-                        <Clock className="h-3 w-3" /> Pendente
-                      </span>
-                    </p>
-                  </div>
-                  <Button
-                    onClick={() => navigate('/upload', { state: { pedidoId: p.id } })}
-                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800"
-                    size="sm"
-                  >
-                    Adicionar Cotações
-                  </Button>
-                </Card>
-              ))}
-            </div>
-          </div>
-        )}
-      </Card>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl mt-8">
         <Card
-          className="p-6 border border-slate-200 shadow-sm flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer"
+          className="p-8 border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 transition-all cursor-pointer flex flex-col items-center text-center group"
+          onClick={() => navigate('/upload')}
+        >
+          <div className="h-16 w-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+            <UploadCloud className="h-8 w-8" />
+          </div>
+          <h3 className="text-xl font-semibold text-slate-800 mb-2">Nova Cotação</h3>
+          <p className="text-sm text-slate-500 mb-6">
+            Inicie um novo pedido de cotação fazendo o upload de seus documentos de embarque.
+          </p>
+          <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">Começar Agora</Button>
+        </Card>
+
+        <Card
+          className="p-8 border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col items-center text-center group"
           onClick={() => navigate('/history')}
         >
-          <div>
-            <h3 className="font-semibold text-slate-800">Histórico de Decisões</h3>
-            <p className="text-sm text-slate-500">Consulte o arquivo de cotações concluídas.</p>
+          <div className="h-16 w-16 bg-slate-50 text-slate-600 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+            <HistoryIcon className="h-8 w-8" />
           </div>
-          <div className="h-10 w-10 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
-            <HistoryIcon className="h-5 w-5" />
-          </div>
-        </Card>
-        <Card className="p-6 border border-slate-200 shadow-sm flex items-center justify-between opacity-60 cursor-not-allowed">
-          <div>
-            <h3 className="font-semibold text-slate-800">Relatórios de Economia</h3>
-            <p className="text-sm text-slate-500">Em breve: Analytics e Saving.</p>
-          </div>
+          <h3 className="text-xl font-semibold text-slate-800 mb-2">Histórico</h3>
+          <p className="text-sm text-slate-500 mb-6">
+            Consulte o arquivo de pedidos e cotações realizadas anteriormente no sistema.
+          </p>
+          <Button variant="outline" className="w-full">
+            Acessar Histórico
+          </Button>
         </Card>
       </div>
     </div>
