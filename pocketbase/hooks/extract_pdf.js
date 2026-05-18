@@ -32,14 +32,14 @@ routerAdd(
 Sua tarefa é extrair as seguintes informações a partir do texto do documento de solicitação de cotação de frete (Booking/Pedido) e retornar EXCLUSIVAMENTE em formato JSON.
 
 Regras de Extração e Formatação:
-1. origem: Extraia a origem da carga. OBRIGATÓRIO: Formatar APENAS no padrão "Cidade, País". Remova completamente endereços de rua, números, bairros ou CEPs. Exemplos corretos: "Shanghai, China", "Santos, Brasil", "Miami, USA".
+1. origem: Extraia a origem da carga. OBRIGATÓRIO: Formatar APENAS no padrão estrito "Cidade, País". Remova completamente endereços de rua, números, bairros, códigos postais ou CEPs. Apenas o nome da cidade e do país devem ser retornados. Exemplos corretos: "Shanghai, China", "Santos, Brasil", "Miami, USA".
 2. destino: Extraia o destino.
 3. peso_bruto: Peso bruto total em kg (apenas número, ou null se não houver).
 4. volume: Volume total em metros cúbicos (CBM) (apenas número, ou null).
 5. quantidade_containers: Se houver indicação de contêiner (ex: 2x40HC), extraia a quantidade (apenas número, ou null).
-6. tipo_mercadoria: Descrição do tipo de carga.
+6. tipo_mercadoria: Descrição do tipo de carga (Commodity). IMPORTANTE: Só preencha se estiver EXPLICITAMENTE declarado no documento. Não invente, não deduza e não use valores padrão genéricos. Se não encontrar, retorne null.
 7. modal_desejado: Deve ser estritamente "Aéreo", "FCL" ou "LCL". Inferir pelo texto (ex: se mencionar containers, é FCL; se mencionar CBM sem container, LCL; se mencionar Air, Aéreo).
-8. incoterm: Extraia o Incoterm mencionado. Você DEVE mapeá-lo para UM DESTES valores estritos: EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR, CIF. Se não conseguir identificar, retorne null.
+8. incoterm: Identifique automaticamente o Incoterm mencionado. Você DEVE mapeá-lo para UM DESTES valores estritos: EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR, CIF. Se não conseguir identificar claramente, retorne null.
 9. prazo_desejado_dias: Prazo transit time desejado em dias (apenas número, ou null).
 
 TEXTO PARA ANÁLISE:

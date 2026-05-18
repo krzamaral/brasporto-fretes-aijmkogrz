@@ -611,6 +611,9 @@ export default function Upload() {
   const watchedModal = form.watch('modal_desejado')
   const watchedVolume = form.watch('volume')
   const watchedPeso = form.watch('peso_bruto')
+  const watchedOrigem = form.watch('origem')
+  const watchedDestino = form.watch('destino')
+  const watchedIncoterm = form.watch('incoterm')
 
   useEffect(() => {
     if (watchedModal === 'FCL') {
@@ -769,9 +772,22 @@ export default function Upload() {
         <div className="mt-12 max-w-3xl mx-auto animate-fade-in-up">
           <div className="mb-6">
             <h3 className="text-xl font-semibold text-slate-800">Revise os dados do Pedido</h3>
-            <p className="text-slate-500 text-sm">
+            <p className="text-slate-500 text-sm mb-4">
               Confirme ou altere os dados extraídos antes de prosseguir.
             </p>
+            {(!watchedOrigem ||
+              !watchedDestino ||
+              !watchedIncoterm ||
+              (watchedModal === 'Aéreo' && !watchedPeso) ||
+              (watchedModal === 'LCL' && !watchedVolume)) && (
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-md flex gap-2.5 text-amber-800 text-sm items-start">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <p>
+                  Alguns campos obrigatórios não foram identificados automaticamente no documento.
+                  Por favor, preencha os campos em destaque para prosseguir.
+                </p>
+              </div>
+            )}
           </div>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onPedidoSubmit)} className="space-y-6">
@@ -797,7 +813,11 @@ export default function Upload() {
                             setAutoDetectedOrigem(false)
                           }}
                           className={
-                            autoDetectedOrigem ? 'border-blue-400 ring-1 ring-blue-200' : ''
+                            autoDetectedOrigem
+                              ? 'border-blue-400 ring-1 ring-blue-200'
+                              : !field.value
+                                ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
+                                : ''
                           }
                         />
                       </FormControl>
@@ -812,7 +832,14 @@ export default function Upload() {
                     <FormItem>
                       <FormLabel>Destino</FormLabel>
                       <FormControl>
-                        <Input {...field} />
+                        <Input
+                          {...field}
+                          className={
+                            !field.value
+                              ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
+                              : ''
+                          }
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -835,6 +862,11 @@ export default function Upload() {
                           value={field.value ?? ''}
                           onChange={(e) =>
                             field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                          }
+                          className={
+                            watchedModal === 'Aéreo' && (field.value == null || field.value <= 0)
+                              ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
+                              : ''
                           }
                         />
                       </FormControl>
@@ -859,6 +891,11 @@ export default function Upload() {
                           value={field.value ?? ''}
                           onChange={(e) =>
                             field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                          }
+                          className={
+                            watchedModal === 'LCL' && (field.value == null || field.value <= 0)
+                              ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
+                              : ''
                           }
                         />
                       </FormControl>
@@ -924,7 +961,11 @@ export default function Upload() {
                         <FormControl>
                           <SelectTrigger
                             className={
-                              autoDetectedIncoterm ? 'border-green-400 ring-1 ring-green-200' : ''
+                              autoDetectedIncoterm
+                                ? 'border-green-400 ring-1 ring-green-200'
+                                : !field.value
+                                  ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
+                                  : ''
                             }
                           >
                             <SelectValue placeholder="Selecione o Incoterm" />
