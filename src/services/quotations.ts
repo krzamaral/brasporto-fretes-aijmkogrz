@@ -9,6 +9,9 @@ export interface Quotation {
     freight?: number
     origin_taxes?: number
     destination_taxes?: number
+    frete_unitario?: number
+    frete_peso?: number
+    taxas_origem?: number
   }
   option_description?: string
   transit_time?: number

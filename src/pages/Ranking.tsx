@@ -163,9 +163,12 @@ export default function Ranking() {
     <div className="min-h-screen bg-slate-50 p-2 md:p-6 pb-24 print:bg-white print:p-0">
       <style>{`
         @media print { 
-          @page { margin: 1cm; size: landscape; }
+          @page { margin: 10mm; size: landscape; }
           body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; }
           .print-hidden { display: none !important; }
+          table { page-break-inside: auto; max-width: 100% !important; }
+          tr { page-break-inside: avoid; page-break-after: auto; }
+          td, th { page-break-inside: avoid; }
         }
       `}</style>
 
@@ -255,10 +258,12 @@ export default function Ranking() {
         </div>
 
         {/* Stepper */}
-        <Stepper currentStep={5} />
+        <div className="print-hidden">
+          <Stepper currentStep={5} />
+        </div>
 
         {/* 3 Columns Data Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-3 print:grid-cols-3 gap-4 items-stretch">
           {/* Column 1: Client Request */}
           <div className="flex flex-col">
             <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
@@ -439,11 +444,11 @@ export default function Ranking() {
         </div>
 
         {/* Quotations Table */}
-        <div className="overflow-x-auto overflow-y-hidden pb-2">
-          <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[12px] uppercase tracking-wide rounded-t-sm min-w-[1000px]">
+        <div className="overflow-x-auto overflow-y-hidden pb-2 print:overflow-visible">
+          <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[12px] uppercase tracking-wide rounded-t-sm min-w-[1000px] print:min-w-0">
             COTAÇÕES RECEBIDAS DOS AGENTES
           </div>
-          <table className="w-full text-center border-collapse whitespace-nowrap min-w-[1000px] bg-white">
+          <table className="w-full text-center border-collapse whitespace-nowrap min-w-[1000px] print:min-w-0 print:whitespace-normal bg-white">
             <thead>
               <tr>
                 <Th rowSpan={2} className="w-[12%]">
@@ -468,22 +473,22 @@ export default function Ranking() {
                 <Th>
                   Frete
                   <br />
-                  Total
+                  Unitário
                 </Th>
                 <Th>
-                  Taxas
+                  Total Frete
+                  <br />
+                  Peso
+                </Th>
+                <Th>
+                  Taxas de
                   <br />
                   Origem
                 </Th>
-                <Th>
-                  Taxas
-                  <br />
-                  Destino
-                </Th>
                 <Th className="bg-slate-200 text-slate-900">
-                  Total
+                  Valor
                   <br />
-                  Geral
+                  Total
                 </Th>
                 <Th>
                   Transit Time
@@ -536,19 +541,23 @@ export default function Ranking() {
                     </Td>
                     <Td>{q.modal}</Td>
                     <Td>
-                      {q.cost_breakdown?.freight
-                        ? q.cost_breakdown.freight.toFixed(2)
-                        : q.cost.toFixed(2)}
-                    </Td>
-                    <Td>
-                      {q.cost_breakdown?.origin_taxes
-                        ? q.cost_breakdown.origin_taxes.toFixed(2)
+                      {q.cost_breakdown?.frete_unitario
+                        ? q.cost_breakdown.frete_unitario.toFixed(2)
                         : '-'}
                     </Td>
                     <Td>
-                      {q.cost_breakdown?.destination_taxes
-                        ? q.cost_breakdown.destination_taxes.toFixed(2)
-                        : '-'}
+                      {q.cost_breakdown?.frete_peso
+                        ? q.cost_breakdown.frete_peso.toFixed(2)
+                        : q.cost_breakdown?.freight
+                          ? q.cost_breakdown.freight.toFixed(2)
+                          : '-'}
+                    </Td>
+                    <Td>
+                      {q.cost_breakdown?.taxas_origem
+                        ? q.cost_breakdown.taxas_origem.toFixed(2)
+                        : q.cost_breakdown?.origin_taxes
+                          ? q.cost_breakdown.origin_taxes.toFixed(2)
+                          : '-'}
                     </Td>
                     <Td className="font-bold bg-slate-50 text-slate-900">{q.cost.toFixed(2)}</Td>
                     <Td>{q.transit_time ? `${q.transit_time} a ${q.transit_time + 1}` : '-'}</Td>
@@ -589,9 +598,9 @@ export default function Ranking() {
         </div>
 
         {/* Footer Data Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-12 print:grid-cols-12 gap-4 items-stretch">
           {/* Decision Summary (Col 1-7) */}
-          <div className="lg:col-span-7 flex flex-col">
+          <div className="lg:col-span-7 print:col-span-7 flex flex-col">
             <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
               RESUMO DA DECISÃO
             </div>
@@ -740,7 +749,7 @@ export default function Ranking() {
           </div>
 
           {/* Ranking List (Col 8-12) */}
-          <div className="lg:col-span-5 h-full flex flex-col">
+          <div className="lg:col-span-5 print:col-span-5 h-full flex flex-col">
             <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
               RANKING FINAL (Elegíveis)
             </div>
