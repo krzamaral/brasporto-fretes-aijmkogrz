@@ -50,6 +50,9 @@ const pedidoSchema = z
     destino: z.string().min(1, 'Obrigatório'),
     peso_bruto: z.number({ invalid_type_error: 'Deve ser um número' }).nullable().optional(),
     volume: z.number({ invalid_type_error: 'Deve ser um número' }).nullable().optional(),
+    comprimento: z.number({ invalid_type_error: 'Deve ser um número' }).nullable().optional(),
+    largura: z.number({ invalid_type_error: 'Deve ser um número' }).nullable().optional(),
+    altura: z.number({ invalid_type_error: 'Deve ser um número' }).nullable().optional(),
     quantidade_containers: z
       .number({ invalid_type_error: 'Deve ser um número' })
       .nullable()
@@ -206,6 +209,9 @@ export default function Upload() {
       destino: '',
       peso_bruto: null,
       volume: null,
+      comprimento: null,
+      largura: null,
+      altura: null,
       quantidade_containers: null,
       tipo_mercadoria: '',
       modal_desejado: 'Aéreo',
@@ -315,6 +321,9 @@ export default function Upload() {
         destino: extracted?.destino || '',
         peso_bruto: extracted?.peso_bruto ? Number(extracted.peso_bruto) : null,
         volume: extracted?.volume ? Number(extracted.volume) : null,
+        comprimento: extracted?.comprimento ? Number(extracted.comprimento) : null,
+        largura: extracted?.largura ? Number(extracted.largura) : null,
+        altura: extracted?.altura ? Number(extracted.altura) : null,
         quantidade_containers: extracted?.quantidade_containers
           ? Number(extracted.quantidade_containers)
           : null,
@@ -587,6 +596,9 @@ export default function Upload() {
         destino: data.destino,
         peso_bruto: data.peso_bruto ? Number(data.peso_bruto) : null,
         volume: data.volume ? Number(data.volume) : undefined,
+        comprimento: data.comprimento ? Number(data.comprimento) : undefined,
+        largura: data.largura ? Number(data.largura) : undefined,
+        altura: data.altura ? Number(data.altura) : undefined,
         quantidade_containers: data.quantidade_containers
           ? Number(data.quantidade_containers)
           : null,
@@ -654,7 +666,16 @@ export default function Upload() {
     }
   }, [watchedModal, form])
 
-  const pesoCubado = (watchedVolume || 0) * 166.667
+  const watchedComp = form.watch('comprimento')
+  const watchedLarg = form.watch('largura')
+  const watchedAlt = form.watch('altura')
+
+  const pesoCubadoByDim =
+    watchedComp && watchedLarg && watchedAlt
+      ? (watchedComp * watchedLarg * watchedAlt * (form.watch('quantidade_containers') || 1)) / 6000
+      : 0
+
+  const pesoCubado = pesoCubadoByDim > 0 ? pesoCubadoByDim : (watchedVolume || 0) * 166.667
   const pesoTaxado = Math.max(watchedPeso || 0, pesoCubado)
 
   const renderContent = () => {
@@ -953,6 +974,68 @@ export default function Upload() {
                     </FormItem>
                   )}
                 />
+                <div className="grid grid-cols-3 gap-2">
+                  <FormField
+                    control={form.control}
+                    name="comprimento"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Comp (cm)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) =>
+                              field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                            }
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="largura"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Larg (cm)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) =>
+                              field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                            }
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="altura"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Alt (cm)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) =>
+                              field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                            }
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <FormField
                   control={form.control}
                   name="tipo_mercadoria"
@@ -1106,10 +1189,14 @@ export default function Upload() {
                     </div>
                     <div>
                       <span className="block text-slate-500 text-xs">
-                        Peso Cubado (Volume m³ × 166.667)
+                        {pesoCubadoByDim > 0
+                          ? 'Peso Cubado (Dimensões / 6000)'
+                          : 'Peso Cubado (Volume m³ × 166.667)'}
                       </span>
                       <span className="font-medium">
-                        {watchedVolume || 0} × 166.667 = {pesoCubado.toFixed(2)} kg
+                        {pesoCubadoByDim > 0
+                          ? `${watchedComp}×${watchedLarg}×${watchedAlt} / 6000 = ${pesoCubado.toFixed(2)} kg`
+                          : `${watchedVolume || 0} × 166.667 = ${pesoCubado.toFixed(2)} kg`}
                       </span>
                     </div>
                     <div className="bg-primary/10 px-3 py-1.5 rounded-md">

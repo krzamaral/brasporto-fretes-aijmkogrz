@@ -27,6 +27,9 @@ export interface Quotation {
   etd?: string
   free_time?: number
   taxable_weight?: number
+  rate_unitario?: number
+  frequencia?: 'daily' | '3x_semana' | '1x_semana' | 'sob_consulta'
+  aeroporto_origem?: string
   score: number
   compatibilidade_score?: number
   cotacao_round_id?: string

@@ -270,11 +270,9 @@ export default function Ranking() {
             </tbody>
           </table>
         </div>
-
         <div className="print-hidden">
           <Stepper currentStep={5} />
         </div>
-
         {/* 3 Columns Data Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 print:grid-cols-3 gap-4 items-stretch">
           {/* Column 1 */}
@@ -390,7 +388,6 @@ export default function Ranking() {
             </table>
           </div>
         </div>
-
         {/* Quotations Table */}
         <div className="overflow-x-auto overflow-y-hidden pb-2 print:overflow-visible">
           <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[12px] uppercase tracking-wide rounded-t-sm min-w-[1000px] print:min-w-0">
@@ -475,11 +472,11 @@ export default function Ranking() {
                     <Td
                       className={cn(
                         'font-bold text-[13px] border border-slate-300',
-                        getScoreColor(q.calculatedScore),
+                        getScoreColor(q.calculatedScore / 100),
                       )}
                     >
-                      {q.calculatedScore.toFixed(2)}
-                    </Td>
+                      {q.calculatedScore.toFixed(1)}%
+                    </Td>{' '}
                     <Td className="print-hidden w-28 text-center p-1">
                       <select
                         className="w-full text-xs p-1 border rounded bg-white text-slate-800"
@@ -507,7 +504,6 @@ export default function Ranking() {
             </tbody>
           </table>
         </div>
-
         {/* Memoria de Calculo Section */}
         {quotations.length > 0 && (
           <div className="mt-6">
@@ -550,13 +546,29 @@ export default function Ranking() {
                       TOTAL: USD {q.computedTotal.toFixed(2)}
                     </li>
                   </ul>
+
+                  <div className="mt-4 pt-3 border-t border-slate-200 print:border-slate-300">
+                    <h5 className="text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Justificativa de Ranking
+                    </h5>
+                    <div className="flex gap-2 text-[10px] text-slate-600">
+                      <span className="bg-slate-100 px-1.5 py-0.5 rounded">
+                        Custo: {q.costScore.toFixed(1)}/50
+                      </span>
+                      <span className="bg-slate-100 px-1.5 py-0.5 rounded">
+                        Transit: {q.transitScore.toFixed(1)}/30
+                      </span>
+                      <span className="bg-slate-100 px-1.5 py-0.5 rounded">
+                        Compat: {(q.compatScore * 20).toFixed(1)}/20
+                      </span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         )}
-
-        {/* AI Recommendation Box */}
+        {/* AI Recommendation Box */}{' '}
         <div className="border border-slate-300 bg-slate-50 rounded-sm mt-6 print:break-inside-avoid">
           <div className="bg-[#00749b]/10 text-[#00749b] font-bold px-4 py-2 text-[11px] uppercase tracking-wide border-b border-slate-300 flex justify-between items-center">
             <span>Análise de Decisão</span>

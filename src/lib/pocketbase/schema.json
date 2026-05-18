@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-18T19:11:04.622Z",
+  "generatedAt": "2026-05-18T19:14:47.523Z",
   "collections": [
     {
       "name": "users",
@@ -163,6 +163,25 @@
           "required": false,
           "system": false,
           "selectValues": ["em_analise", "aprovado", "rejeitado"]
+        },
+        {
+          "name": "rate_unitario",
+          "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "frequencia",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["daily", "3x_semana", "1x_semana", "sob_consulta"]
+        },
+        {
+          "name": "aeroporto_origem",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_quotations_user_id ON quotations (user_id)"]

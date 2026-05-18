@@ -288,6 +288,7 @@ export default function Review() {
           free_time: q.free_time ?? undefined,
           etd: q.etd ?? undefined,
           taxable_weight: q.taxable_weight ?? undefined,
+          rate_unitario: q.unit_rate ?? undefined,
           score: finalScore,
           compatibilidade_score: Math.round(compat),
           pedido_id: pedido.id,

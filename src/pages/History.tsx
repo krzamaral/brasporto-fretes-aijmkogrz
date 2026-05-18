@@ -21,6 +21,7 @@ import {
 } from '@/lib/freight-calculator'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/use-toast'
+import { useRealtime } from '@/hooks/use-realtime'
 
 type HistoryRow = {
   pedido: Pedido
@@ -31,28 +32,34 @@ type HistoryRow = {
 export default function History() {
   const [rows, setRows] = useState<HistoryRow[]>([])
   const [selectedRow, setSelectedRow] = useState<HistoryRow | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>('todos')
   const { toast } = useToast()
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const ped = await getPedidos()
-        const concluded = ped.filter((p) => p.status === 'concluido')
-        const quotes = await getHistoryQuotations()
+  const loadData = async () => {
+    try {
+      const ped = await getPedidos()
+      const concluded = ped.filter((p) => p.status === 'concluido')
+      const quotes = await getHistoryQuotations()
 
-        const combined = concluded.map((p) => {
-          const pQuotes = quotes.filter((q) => q.pedido_id === p.id)
-          const ranked = rankQuotations(pQuotes, p)
-          const winner = ranked.length > 0 ? ranked[0] : null
-          return { pedido: p, winner, quotations: ranked }
-        })
-        setRows(combined)
-      } catch (e) {
-        console.error(e)
-      }
+      const combined = concluded.map((p) => {
+        const pQuotes = quotes.filter((q) => q.pedido_id === p.id)
+        const ranked = rankQuotations(pQuotes, p)
+        const winner = ranked.length > 0 ? ranked[0] : null
+        return { pedido: p, winner, quotations: ranked }
+      })
+      setRows(combined)
+    } catch (e) {
+      console.error(e)
     }
+  }
+
+  useEffect(() => {
     loadData()
   }, [])
+
+  useRealtime('quotations', () => {
+    loadData()
+  })
 
   const handlePrintModal = () => window.print()
 
@@ -241,7 +248,7 @@ export default function History() {
                         </td>
                         <td className="px-3 py-3 text-center">
                           <span className="px-2 py-0.5 bg-slate-100 print:bg-transparent print:border print:border-black rounded-full font-bold text-slate-700 print:text-black">
-                            {q.calculatedScore.toFixed(2)}
+                            {q.calculatedScore.toFixed(1)}%
                           </span>
                         </td>
                         <td className="px-3 py-3 text-center print-hidden">
@@ -303,6 +310,23 @@ export default function History() {
                       TOTAL: USD {q.computedTotal.toFixed(2)}
                     </li>
                   </ul>
+
+                  <div className="mt-4 pt-3 border-t border-slate-200 print:border-slate-300">
+                    <h5 className="text-[10px] font-bold text-slate-500 uppercase mb-1 print:text-black">
+                      Justificativa de Ranking
+                    </h5>
+                    <div className="flex gap-2 text-[10px] text-slate-600 print:text-black">
+                      <span className="bg-slate-100 print:bg-transparent px-1.5 py-0.5 rounded print:border print:border-black">
+                        Custo: {q.costScore.toFixed(1)}/50
+                      </span>
+                      <span className="bg-slate-100 print:bg-transparent px-1.5 py-0.5 rounded print:border print:border-black">
+                        Transit: {q.transitScore.toFixed(1)}/30
+                      </span>
+                      <span className="bg-slate-100 print:bg-transparent px-1.5 py-0.5 rounded print:border print:border-black">
+                        Compat: {(q.compatScore * 20).toFixed(1)}/20
+                      </span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -346,6 +370,22 @@ export default function History() {
       </div>
 
       <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm print:hidden">
+        <div className="mb-6 flex justify-end">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-slate-500" />
+            <select
+              className="text-sm border-slate-300 rounded-md bg-white text-slate-700 py-1.5 px-3 border shadow-sm outline-none"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="todos">Todos os Status</option>
+              <option value="em_analise">Em Análise</option>
+              <option value="aprovado">Aprovado</option>
+              <option value="rejeitado">Rejeitado</option>
+            </select>
+          </div>
+        </div>
+
         {rows.length === 0 ? (
           <div className="text-center py-12 text-slate-500">Nenhum histórico encontrado.</div>
         ) : (
@@ -363,54 +403,62 @@ export default function History() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
-                  const { pedido, winner } = row
-                  return (
-                    <tr
-                      key={pedido.id}
-                      className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50"
-                    >
-                      <td className="px-4 py-3 whitespace-nowrap text-slate-600">
-                        {new Date(pedido.created).toLocaleDateString('pt-BR')}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-800">
-                        {pedido.origem}{' '}
-                        <ArrowLeft className="inline h-3 w-3 rotate-180 text-slate-400" />{' '}
-                        {pedido.destino}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5 text-slate-600">
-                          {pedido.modal_desejado === 'Aéreo' ? (
-                            <Plane className="h-3.5 w-3.5" />
+                {rows
+                  .filter((row) => {
+                    if (statusFilter === 'todos') return true
+                    if (row.winner) {
+                      return (row.winner.status || 'em_analise') === statusFilter
+                    }
+                    return statusFilter === 'em_analise'
+                  })
+                  .map((row) => {
+                    const { pedido, winner } = row
+                    return (
+                      <tr
+                        key={pedido.id}
+                        className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50"
+                      >
+                        <td className="px-4 py-3 whitespace-nowrap text-slate-600">
+                          {new Date(pedido.created).toLocaleDateString('pt-BR')}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-800">
+                          {pedido.origem}{' '}
+                          <ArrowLeft className="inline h-3 w-3 rotate-180 text-slate-400" />{' '}
+                          {pedido.destino}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5 text-slate-600">
+                            {pedido.modal_desejado === 'Aéreo' ? (
+                              <Plane className="h-3.5 w-3.5" />
+                            ) : (
+                              <Ship className="h-3.5 w-3.5" />
+                            )}
+                            {pedido.modal_desejado}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-blue-700">
+                          {winner ? `${winner.agent_name}` : '-'}
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-slate-800 text-right">
+                          {winner ? winner.computedTotal.toFixed(2) : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {winner ? (
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">
+                              {winner.calculatedScore.toFixed(1)}%
+                            </span>
                           ) : (
-                            <Ship className="h-3.5 w-3.5" />
+                            '-'
                           )}
-                          {pedido.modal_desejado}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-blue-700">
-                        {winner ? `${winner.agent_name}` : '-'}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-slate-800 text-right">
-                        {winner ? winner.computedTotal.toFixed(2) : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {winner ? (
-                          <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">
-                            {winner.calculatedScore.toFixed(2)}
-                          </span>
-                        ) : (
-                          '-'
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Button variant="secondary" size="sm" onClick={() => setSelectedRow(row)}>
-                          <Eye className="h-4 w-4 mr-1.5" /> Visualizar
-                        </Button>
-                      </td>
-                    </tr>
-                  )
-                })}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Button variant="secondary" size="sm" onClick={() => setSelectedRow(row)}>
+                            <Eye className="h-4 w-4 mr-1.5" /> Visualizar
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
               </tbody>
             </table>
           </div>

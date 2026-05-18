@@ -46,19 +46,20 @@ export function calculateExw(
     const cleanStr = upper.replace(/[^\d.,]/g, '').replace(',', '.')
     const num = parseFloat(cleanStr)
     if (!isNaN(num) && num > 0 && cleanStr.length > 0)
-      return { total: num, log: `Taxa Fixa: USD ${num.toFixed(2)}` }
+      return { total: Math.max(num, min), log: `Taxa Fixa: USD ${Math.max(num, min).toFixed(2)}` }
 
     return {
-      total: fallbackValue,
-      log: fallbackValue > 0 ? `Taxa Fixa: USD ${fallbackValue.toFixed(2)}` : '',
+      total: Math.max(fallbackValue, min),
+      log: fallbackValue > 0 ? `Taxa Fixa: USD ${Math.max(fallbackValue, min).toFixed(2)}` : '',
     }
   }
 
-  const calculated = rate * taxableWeight + fixed
-  if (calculated < min) {
+  const calculated = Math.max(taxableWeight * rate + fixed, min)
+
+  if (calculated === min && min > 0) {
     return {
       total: min,
-      log: `EXW charge: mínimo USD ${min.toFixed(2)} (cálculo: ${taxableWeight.toFixed(2)} * ${rate.toFixed(2)} + ${fixed.toFixed(2)} = ${calculated.toFixed(2)})`,
+      log: `EXW charge: mínimo USD ${min.toFixed(2)} (cálculo: ${taxableWeight.toFixed(2)} * ${rate.toFixed(2)} + ${fixed.toFixed(2)} = ${(taxableWeight * rate + fixed).toFixed(2)})`,
     }
   } else {
     return {
@@ -82,9 +83,9 @@ export function calculateChargeableWeight(pedido: Pedido): number {
         6000
     } else {
       const volume = pedido.volume || 0
-      volumeWeight = (volume * 1000000) / 6000
+      volumeWeight = volume * 166.667
     }
-    return Math.ceil(Math.max(pesoBruto, volumeWeight))
+    return Math.max(pesoBruto, volumeWeight)
   }
 
   const volume = pedido.volume || 0
@@ -106,51 +107,39 @@ function calculateCompatibility(q: Quotation, pedido: Pedido): number {
     q.cost_breakdown?.taxas_origem ||
     q.cost_breakdown?.origin_taxes
   if (pedido.incoterm === 'EXW') {
-    if (providesExw) score += 0.3
-    else score += 0.1
+    score += providesExw ? 0.4 : 0.0
   } else {
-    score += 0.3
+    score += 0.4
   }
 
   const origin = (pedido.origem || '').toUpperCase()
-  const qAgentDesc = ((q.option_description || '') + ' ' + (q.agent_name || '')).toUpperCase()
+  const qAgentDesc = (
+    (q.option_description || '') +
+    ' ' +
+    (q.agent_name || '') +
+    ' ' +
+    (q.aeroporto_origem || '')
+  ).toUpperCase()
 
-  let proximityScore = 0.1
+  let proximityScore = 0.2
   if (origin.includes('DALIAN')) {
-    if (qAgentDesc.includes('PEK') || qAgentDesc.includes('DLC')) proximityScore = 0.25
+    if (qAgentDesc.includes('PEK') || qAgentDesc.includes('DLC') || qAgentDesc.includes('BEIJING'))
+      proximityScore = 0.6
   } else if (origin.includes('SHANGHAI')) {
-    if (qAgentDesc.includes('PVG') || qAgentDesc.includes('SHA')) proximityScore = 0.25
+    if (qAgentDesc.includes('PVG') || qAgentDesc.includes('SHA')) proximityScore = 0.6
   } else if (origin.includes('GUANGZHOU')) {
-    if (qAgentDesc.includes('CAN') || qAgentDesc.includes('SZX')) proximityScore = 0.25
+    if (qAgentDesc.includes('CAN') || qAgentDesc.includes('SZX') || qAgentDesc.includes('SHENZHEN'))
+      proximityScore = 0.6
+  } else if (origin.includes('XIAMEN')) {
+    if (qAgentDesc.includes('XMN')) proximityScore = 0.6
   } else if (origin.includes('EZHOU')) {
-    if (qAgentDesc.includes('EHU')) proximityScore = 0.25
+    if (qAgentDesc.includes('EHU')) proximityScore = 0.6
   } else {
-    proximityScore = 0.25
+    proximityScore = 0.4
   }
   score += proximityScore
 
-  if (
-    qAgentDesc.includes('DAILY') ||
-    qAgentDesc.includes('DIARIO') ||
-    qAgentDesc.includes('DIÁRIO')
-  )
-    score += 0.2
-  else if (qAgentDesc.includes('3X') || qAgentDesc.includes('WED, FRI, SAT')) score += 0.12
-  else if (qAgentDesc.includes('1X') || qAgentDesc.includes('WEEKLY')) score += 0.06
-  else score += 0.2
-
-  let connections = 1
-  const routeMatch = qAgentDesc.match(/[A-Z]{3}-[A-Z]{3}(-[A-Z]{3})+/)
-  if (routeMatch) {
-    const segments = routeMatch[0].split('-')
-    connections = segments.length - 2
-  }
-  if (connections <= 0) score += 0.1
-  else if (connections === 1) score += 0.08
-  else if (connections === 2) score += 0.05
-  else score += 0.02
-
-  return score + 0.15
+  return Math.min(score, 1)
 }
 
 export type EnrichedQuotation = Quotation & {
@@ -259,10 +248,11 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
 
   return enriched
     .map((q) => {
-      const costScore = q.computedTotal > 0 ? (minCost / q.computedTotal) * 0.5 : 0
+      const costScore = q.computedTotal > 0 ? (minCost / q.computedTotal) * 50 : 0
       const transitScore =
-        (q.transit_time ?? 0) > 0 ? (minTransit / (q.transit_time as number)) * 0.3 : 0.15
-      const finalScore = costScore + transitScore + q.compatScore * 0.2
+        (q.transit_time ?? 0) > 0 ? (minTransit / (q.transit_time as number)) * 30 : 0
+      const compatScorePoints = q.compatScore * 20
+      const finalScore = costScore + transitScore + compatScorePoints
 
       return {
         ...q,
