@@ -71,7 +71,7 @@ export default function Upload() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
 
   const form = useForm<PedidoFormValues>({
     resolver: zodResolver(pedidoSchema),
@@ -117,11 +117,13 @@ export default function Upload() {
   const processFile = async (file: File) => {
     setErrorMessage('')
 
-    if (!user || !user.id) {
-      const msg = 'Usuário não autenticado. Por favor, faça login novamente.'
+    if (!user || !user.id || !pb.authStore.isValid) {
+      const msg = 'Sessão expirada. Por favor, faça login novamente.'
       setErrorMessage(msg)
       setStatus('error')
       toast({ title: 'Erro de Autenticação', description: msg, variant: 'destructive' })
+      signOut()
+      navigate('/login')
       return
     }
 
@@ -275,8 +277,9 @@ export default function Upload() {
               quotation_id: createdQ.id,
               raw_data: q || {},
             })
-          } catch (err) {
+          } catch (err: any) {
             console.error('Failed to save extracted data:', err)
+            if (err?.status === 401) throw err
           }
         }
 
@@ -342,8 +345,9 @@ export default function Upload() {
             quotation_id: cota2Quote.id,
             raw_data: q || {},
           })
-        } catch (err) {
+        } catch (err: any) {
           console.error('Failed to save extracted data:', err)
+          if (err?.status === 401) throw err
         }
 
         toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
@@ -352,6 +356,17 @@ export default function Upload() {
     } catch (err: any) {
       console.error('Extraction error:', err)
       setStatus('error')
+
+      if (err?.status === 401 || !pb.authStore.isValid) {
+        toast({
+          title: 'Sessão Expirada',
+          description: 'Sua sessão expirou. Faça login novamente.',
+          variant: 'destructive',
+        })
+        signOut()
+        navigate('/login')
+        return
+      }
 
       let errorMsg =
         'Não foi possível processar o arquivo. Verifique sua conexão e tente novamente.'
@@ -403,7 +418,16 @@ export default function Upload() {
   }
 
   const onPedidoSubmit = async (data: PedidoFormValues) => {
-    if (!user) return
+    if (!user || !pb.authStore.isValid) {
+      toast({
+        title: 'Sessão Expirada',
+        description: 'Por favor, faça login novamente.',
+        variant: 'destructive',
+      })
+      signOut()
+      navigate('/login')
+      return
+    }
     try {
       const pedidoPayload = {
         origem: data.origem,
@@ -430,6 +454,16 @@ export default function Upload() {
         description: 'Agora envie o documento da primeira rodada de cotação.',
       })
     } catch (e: any) {
+      if (e?.status === 401 || !pb.authStore.isValid) {
+        toast({
+          title: 'Sessão Expirada',
+          description: 'Por favor, faça login novamente.',
+          variant: 'destructive',
+        })
+        signOut()
+        navigate('/login')
+        return
+      }
       let errorMsg = 'Não foi possível salvar o pedido.'
       if (e?.status === 400) {
         const validationMsg = getErrorMessage(e)
