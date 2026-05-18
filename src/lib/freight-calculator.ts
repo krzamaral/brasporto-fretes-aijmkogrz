@@ -171,6 +171,7 @@ export type EnrichedQuotation = Quotation & {
   costScore: number
   transitScore: number
   justificativaEngine: string
+  isIncompleteData: boolean
 }
 
 export function rankQuotations(quotations: Quotation[], pedido: Pedido): EnrichedQuotation[] {
@@ -178,19 +179,31 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
 
   const chargeableWeight = calculateChargeableWeight(pedido)
 
+  const isLWHMissing = !pedido.comprimento || !pedido.largura || !pedido.altura
+  const isWeightMissing = !pedido.peso_bruto
+
   const enriched = quotations.map((q) => {
+    let isIncompleteData = false
+    if (!q.taxable_weight) {
+      if (pedido.modal_desejado === 'Aéreo' || pedido.modal_desejado === 'LCL') {
+        if (isWeightMissing || isLWHMissing) {
+          isIncompleteData = true
+        }
+      }
+    }
+
     const qTaxable =
       pedido.modal_desejado === 'Aéreo'
         ? Math.ceil(q.taxable_weight || chargeableWeight)
         : q.taxable_weight || chargeableWeight
 
-    let freteUnitario = q.cost_breakdown?.frete_unitario || q.rate_unitario || 0
-    if (freteUnitario === 0 && q.cost > 0 && qTaxable > 0) {
+    let freteUnitario = q.cost_breakdown?.frete_unitario ?? q.rate_unitario ?? 0
+    if (freteUnitario === 0 && q.cost > 0 && qTaxable > 0 && !q.cost_breakdown?.frete_peso) {
       freteUnitario = q.cost / qTaxable
     }
 
     let freteTotal =
-      q.cost_breakdown?.frete_peso || (freteUnitario > 0 ? freteUnitario * qTaxable : q.cost)
+      q.cost_breakdown?.frete_peso ?? (freteUnitario > 0 ? freteUnitario * qTaxable : q.cost)
 
     const isEXW = pedido.incoterm === 'EXW'
 
@@ -243,18 +256,23 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
       })
     }
 
-    const destinationTaxes = q.cost_breakdown?.destination_taxes || 0
+    const destinationTaxes = q.cost_breakdown?.destination_taxes ?? 0
 
-    const computedTotal =
+    let computedTotal =
       freteTotal + appliedTaxasOrigem + pickupFee + additionalTaxes + destinationTaxes
-    const finalTotal = computedTotal > 0 ? computedTotal : q.cost
+
+    if (isIncompleteData) {
+      computedTotal = 0
+    } else if (computedTotal === 0 && q.cost > 0) {
+      computedTotal = q.cost
+    }
 
     const compatScore = calculateCompatibility(q, pedido)
 
     return {
       ...q,
       qTaxable,
-      computedTotal: finalTotal,
+      computedTotal,
       exwLog,
       addTaxesLog,
       freteTotal,
@@ -269,10 +287,11 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
       transitScore: 0,
       justificativaEngine: '',
       isEXW,
+      isIncompleteData,
     } as EnrichedQuotation & { freteUnitario: number; isEXW: boolean }
   })
 
-  const validForMinCost = enriched.filter((q) => q.computedTotal > 0)
+  const validForMinCost = enriched.filter((q) => q.computedTotal > 0 && !q.isIncompleteData)
   const minCost =
     validForMinCost.length > 0 ? Math.min(...validForMinCost.map((q) => q.computedTotal)) : 1
 
@@ -284,28 +303,38 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
 
   return enriched
     .map((q) => {
-      const costScore = q.computedTotal > 0 ? (minCost / q.computedTotal) * 50 : 0
+      let costScore = 0
+      if (!q.isIncompleteData && q.computedTotal > 0) {
+        costScore = (minCost / q.computedTotal) * 50
+      }
+
       const transitScore =
         (q.transit_time ?? 0) > 0 ? (minTransit / (q.transit_time as number)) * 30 : 0
       const compatScorePoints = q.compatScore * 20
-      const finalScore = costScore + transitScore + compatScorePoints
 
-      let justificativa = `Score Total: ${finalScore.toFixed(1)}/100 (Custo: ${costScore.toFixed(1)}/50, Transit Time: ${transitScore.toFixed(1)}/30, Compatibilidade: ${compatScorePoints.toFixed(1)}/20).\n`
-      justificativa += `Detalhamento de Custos (USD ${q.computedTotal.toFixed(2)}):\n`
-      justificativa += `- Frete Base: USD ${q.freteTotal.toFixed(2)} (${q.qTaxable.toFixed(2)} kg * USD ${(q as any).freteUnitario.toFixed(2)})\n`
-      if ((q as any).isEXW) {
-        justificativa += `- EXW/Origem: USD ${q.appliedTaxasOrigem.toFixed(2)} (${q.exwLog})\n`
-      } else if (q.appliedTaxasOrigem > 0) {
-        justificativa += `- Taxas Origem: USD ${q.appliedTaxasOrigem.toFixed(2)}\n`
-      }
-      if (q.pickupFee > 0) {
-        justificativa += `- Pickup Fee: USD ${q.pickupFee.toFixed(2)}\n`
-      }
-      if (q.addTaxesLog.length > 0) {
-        justificativa += `- Adicionais: ${q.addTaxesLog.join(', ')}\n`
-      }
-      if (q.destinationTaxes > 0) {
-        justificativa += `- Destino: USD ${q.destinationTaxes.toFixed(2)}\n`
+      const finalScore = q.isIncompleteData ? 0 : costScore + transitScore + compatScorePoints
+
+      let justificativa = ''
+      if (q.isIncompleteData) {
+        justificativa = `Dados Incompletos: Não foi possível calcular o custo total devido à falta de peso, dimensões ou peso taxável na extração.`
+      } else {
+        justificativa = `Score Total: ${finalScore.toFixed(1)}/100 (Custo: ${costScore.toFixed(1)}/50, Transit Time: ${transitScore.toFixed(1)}/30, Compatibilidade: ${compatScorePoints.toFixed(1)}/20).\n`
+        justificativa += `Detalhamento de Custos (USD ${q.computedTotal.toFixed(2)}):\n`
+        justificativa += `- Frete Base: USD ${q.freteTotal.toFixed(2)} (${q.qTaxable.toFixed(2)} kg * USD ${(q as any).freteUnitario.toFixed(2)})\n`
+        if ((q as any).isEXW) {
+          justificativa += `- EXW/Origem: USD ${q.appliedTaxasOrigem.toFixed(2)} (${q.exwLog})\n`
+        } else if (q.appliedTaxasOrigem > 0) {
+          justificativa += `- Taxas Origem: USD ${q.appliedTaxasOrigem.toFixed(2)}\n`
+        }
+        if (q.pickupFee > 0) {
+          justificativa += `- Pickup Fee: USD ${q.pickupFee.toFixed(2)}\n`
+        }
+        if (q.addTaxesLog.length > 0) {
+          justificativa += `- Adicionais: ${q.addTaxesLog.join(', ')}\n`
+        }
+        if (q.destinationTaxes > 0) {
+          justificativa += `- Destino: USD ${q.destinationTaxes.toFixed(2)}\n`
+        }
       }
 
       return {

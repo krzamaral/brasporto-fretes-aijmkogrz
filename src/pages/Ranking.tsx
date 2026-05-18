@@ -434,28 +434,45 @@ export default function Ranking() {
                   : q.agent_name
 
                 return (
-                  <tr key={q.id} className="hover:bg-slate-50 transition-colors">
+                  <tr
+                    key={q.id}
+                    className={cn(
+                      'hover:bg-slate-50 transition-colors',
+                      q.isIncompleteData && 'opacity-60 bg-red-50/30',
+                    )}
+                  >
                     <Td
                       className="font-bold text-left whitespace-normal max-w-[200px]"
                       title={agentDisplayName}
                     >
                       {agentDisplayName}
+                      {q.isIncompleteData && (
+                        <div className="text-[10px] text-red-600 font-bold mt-1">
+                          DADOS INCOMPLETOS
+                        </div>
+                      )}
                     </Td>
                     <Td>{q.modal}</Td>
                     <Td className="font-semibold text-blue-700 bg-blue-50/30">
-                      {q.qTaxable.toFixed(2)}
+                      {q.qTaxable > 0 ? q.qTaxable.toFixed(2) : '-'}
                     </Td>
+                    <Td>{q.freteUnitario > 0 ? q.freteUnitario.toFixed(2) : '-'}</Td>
                     <Td>
-                      {(q.cost_breakdown?.frete_unitario || 0) > 0
-                        ? (q.cost_breakdown?.frete_unitario || 0).toFixed(2)
-                        : '-'}
+                      {q.freteTotal > 0 ? q.freteTotal.toFixed(2) : '-'}{' '}
+                      <span className="text-[10px] text-slate-400 block">
+                        +{(q.additionalTaxes + q.destinationTaxes + q.pickupFee).toFixed(2)} tx
+                      </span>
                     </Td>
-                    <Td>{q.freteTotal > 0 ? q.freteTotal.toFixed(2) : '-'}</Td>
                     <Td title={q.cost_breakdown?.formula_origem || 'Taxa Origem'}>
-                      {q.appliedTaxasOrigem > 0 ? q.appliedTaxasOrigem.toFixed(2) : '-'}
+                      {q.appliedTaxasOrigem > 0 ? q.appliedTaxasOrigem.toFixed(2) : '0.00'}
                     </Td>
-                    <Td className="font-bold bg-slate-50 text-slate-900">
-                      {q.computedTotal.toFixed(2)}
+                    <Td
+                      className={cn(
+                        'font-bold bg-slate-50 text-slate-900',
+                        q.isIncompleteData && 'text-red-500',
+                      )}
+                    >
+                      {q.isIncompleteData ? 'ERR' : q.computedTotal.toFixed(2)}
                     </Td>
                     <Td>{q.transit_time ? `${q.transit_time} dias` : '-'}</Td>
                     <Td className="capitalize">{q.frequencia?.replace('_', ' ') || '-'}</Td>
@@ -472,10 +489,12 @@ export default function Ranking() {
                     <Td
                       className={cn(
                         'font-bold text-[13px] border border-slate-300',
-                        getScoreColor(q.calculatedScore / 100),
+                        q.isIncompleteData
+                          ? 'bg-slate-200 text-slate-500'
+                          : getScoreColor(q.calculatedScore / 100),
                       )}
                     >
-                      {q.calculatedScore.toFixed(1)}%
+                      {q.isIncompleteData ? '0.0%' : `${q.calculatedScore.toFixed(1)}%`}
                     </Td>{' '}
                     <Td className="print-hidden w-28 text-center p-1">
                       <select
@@ -543,7 +562,10 @@ export default function Ranking() {
                       </li>
                     )}
                     <li className="pt-2 border-t border-slate-200 mt-2 font-black text-slate-800 text-sm">
-                      TOTAL: USD {q.computedTotal.toFixed(2)}
+                      TOTAL:{' '}
+                      {q.isIncompleteData
+                        ? 'DADOS INCOMPLETOS'
+                        : `USD ${q.computedTotal.toFixed(2)}`}
                     </li>
                   </ul>
 
@@ -551,7 +573,12 @@ export default function Ranking() {
                     <h5 className="text-[10px] font-bold text-slate-500 uppercase mb-1">
                       Justificativa Técnica (Motor de Ranking)
                     </h5>
-                    <div className="mt-1 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed bg-white p-2 border border-slate-100 rounded print:border-slate-300">
+                    <div
+                      className={cn(
+                        'mt-1 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed bg-white p-2 border border-slate-100 rounded print:border-slate-300',
+                        q.isIncompleteData && 'text-red-700 bg-red-50 border-red-100',
+                      )}
+                    >
                       {q.justificativaEngine}
                     </div>
                   </div>
