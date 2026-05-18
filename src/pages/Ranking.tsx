@@ -505,16 +505,16 @@ export default function Ranking() {
                       title={agentDisplayName}
                     >
                       {agentDisplayName}
-                      {q.subjectToReconfirmation && (
+                      {q.subjectToReconfirmation ? (
                         <div className="flex items-center gap-1 text-[10px] text-orange-600 font-bold mt-1 bg-orange-50 px-1 py-0.5 rounded w-fit border border-orange-100">
                           <AlertTriangle className="w-3 h-3" /> Instável
                         </div>
-                      )}
-                      {q.isIncompleteData && (
+                      ) : null}
+                      {q.isIncompleteData ? (
                         <div className="text-[10px] text-red-600 font-bold mt-1">
                           DADOS INCOMPLETOS
                         </div>
-                      )}
+                      ) : null}
                     </Td>
                     <Td>{q.modal}</Td>
                     <Td className="font-semibold text-blue-700 bg-blue-50/30">
@@ -529,14 +529,14 @@ export default function Ranking() {
                     </Td>
                     <Td title={q.cost_breakdown?.formula_origem || 'Taxa Origem'}>
                       {q.appliedTaxasOrigem > 0 ? q.appliedTaxasOrigem.toFixed(2) : '0.00'}
-                      {q.exwLog && (
+                      {q.exwLog ? (
                         <span
                           className="text-[9px] text-slate-400 block max-w-[120px] truncate mx-auto"
                           title={q.exwLog}
                         >
                           {q.exwLog.split('=')[0]}
                         </span>
-                      )}
+                      ) : null}
                     </Td>
                     <Td
                       className={cn(
@@ -582,7 +582,7 @@ export default function Ranking() {
                   </tr>
                 )
               })}
-              {quotations.length === 0 && (
+              {quotations.length === 0 ? (
                 <tr>
                   <td
                     colSpan={14}
@@ -591,7 +591,7 @@ export default function Ranking() {
                     Nenhuma cotação recebida para este pedido.
                   </td>
                 </tr>
-              )}
+              ) : null}
             </tbody>
           </table>
         </div>

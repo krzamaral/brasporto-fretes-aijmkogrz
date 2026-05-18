@@ -101,7 +101,7 @@ export function calculateChargeableWeight(pedido: Pedido): number {
     const vol =
       (pedido.comprimento * pedido.largura * pedido.altura * (pedido.quantidade_containers || 1)) /
       1000000
-    return Math.max(pesoBruto / 1000, vol)
+    return Math.max(pesoBruto / 1000, Math.max(volume, vol))
   }
 
   return Math.max(pesoBruto / 1000, volume)
@@ -193,8 +193,12 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
   const enriched = quotations.map((q) => {
     let isIncompleteData = false
     if (!q.taxable_weight) {
-      if (pedido.modal_desejado === 'Aéreo' || pedido.modal_desejado === 'LCL') {
+      if (pedido.modal_desejado === 'Aéreo') {
         if (isWeightMissing || isLWHMissing) {
+          isIncompleteData = true
+        }
+      } else if (pedido.modal_desejado === 'LCL') {
+        if (isWeightMissing || (isLWHMissing && !pedido.volume)) {
           isIncompleteData = true
         }
       }
@@ -203,7 +207,9 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
     const qTaxable =
       pedido.modal_desejado === 'Aéreo'
         ? Math.max(Math.ceil(q.taxable_weight || 0), chargeableWeight)
-        : q.taxable_weight || chargeableWeight
+        : pedido.modal_desejado === 'LCL'
+          ? Math.max(q.taxable_weight || 0, chargeableWeight)
+          : q.taxable_weight || chargeableWeight
 
     let freteUnitario = q.cost_breakdown?.frete_unitario ?? q.rate_unitario ?? 0
     if (freteUnitario === 0 && q.cost > 0 && qTaxable > 0 && !q.cost_breakdown?.frete_peso) {
