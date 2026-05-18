@@ -1,6 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import { LayoutDashboard, UploadCloud, ClipboardCheck, Trophy, LogOut, Truck } from 'lucide-react'
+import { LayoutDashboard, UploadCloud, ClipboardCheck, Trophy, LogOut } from 'lucide-react'
+import logoUrl from '@/assets/logo-color-ad1d0.png'
 import {
   Sidebar,
   SidebarContent,
@@ -41,9 +42,8 @@ export default function Layout() {
       <div className="flex min-h-screen w-full bg-background">
         <Sidebar>
           <SidebarHeader className="p-4">
-            <div className="flex items-center gap-2 px-2 text-sidebar-primary-foreground">
-              <Truck className="h-6 w-6" />
-              <span className="text-xl font-bold tracking-tight">Brasporto</span>
+            <div className="flex items-center gap-2 px-2">
+              <img src={logoUrl} alt="Brasporto" className="h-8 object-contain" />
             </div>
           </SidebarHeader>
           <SidebarContent>

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Truck, ArrowRight, ShieldCheck, Eye, EyeOff } from 'lucide-react'
+import { ArrowRight, ShieldCheck, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import logoUrl from '@/assets/logo-color-ad1d0.png'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -57,14 +58,11 @@ export default function Login() {
     <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 p-4">
       <div className="w-full max-w-md animate-slide-in-up">
         <div className="flex justify-center mb-8">
-          <div className="bg-primary p-4 rounded-2xl shadow-lg flex items-center gap-3 text-primary-foreground">
-            <Truck className="h-8 w-8" />
-            <span className="text-2xl font-bold tracking-tight">Brasporto</span>
-          </div>
+          <img src={logoUrl} alt="Brasporto Logo" className="h-16 object-contain" />
         </div>
 
         <Card className="border-0 shadow-xl rounded-2xl overflow-hidden">
-          <div className="h-2 w-full bg-accent" />
+          <div className="h-2 w-full bg-primary" />
           <CardHeader className="space-y-3 pb-6 text-center">
             <CardTitle className="text-2xl font-bold text-slate-800">Acesso à Plataforma</CardTitle>
             <CardDescription className="text-base text-slate-500">
@@ -119,7 +117,7 @@ export default function Login() {
 
               <Button
                 type="submit"
-                className="w-full h-12 text-base font-semibold bg-accent hover:bg-accent/90 text-white transition-all shadow-md hover:shadow-lg"
+                className="w-full h-12 text-base font-semibold bg-primary hover:bg-primary/90 text-white transition-all shadow-md hover:shadow-lg"
                 disabled={isLoading}
               >
                 {isLoading ? (

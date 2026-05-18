@@ -224,7 +224,7 @@ export default function Ranking() {
                   )}
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
                     <span className="text-slate-500">Score Compatibilidade</span>
-                    <span className="font-semibold text-blue-600">
+                    <span className="font-semibold text-primary">
                       {q.compatibilidade_score || 0} pts
                     </span>
                   </div>
@@ -235,7 +235,7 @@ export default function Ranking() {
                     className={cn(
                       'w-full',
                       isWinner
-                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                        ? 'bg-primary hover:bg-primary/90 text-white'
                         : 'bg-slate-100 hover:bg-slate-200 text-slate-800',
                     )}
                   >
@@ -265,7 +265,7 @@ export default function Ranking() {
           <Button
             onClick={handleGenerateAiProposal}
             variant="default"
-            className="bg-purple-600 hover:bg-purple-700 text-white flex items-center gap-2"
+            className="bg-primary hover:bg-primary/90 text-white flex items-center gap-2"
             disabled={isAiLoading || quotations.length === 0}
           >
             {isAiLoading ? (
@@ -318,7 +318,7 @@ export default function Ranking() {
       <Dialog open={isAiDialogOpen} onOpenChange={setIsAiDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-purple-700">
+            <DialogTitle className="flex items-center gap-2 text-primary">
               <Bot className="h-5 w-5" /> Proposta Gerada por IA
             </DialogTitle>
             <DialogDescription>

@@ -653,8 +653,8 @@ export default function Upload() {
               </div>
 
               {watchedModal === 'Aéreo' && (
-                <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-sm text-slate-700 animate-fade-in">
-                  <h4 className="font-semibold text-blue-900 mb-2">
+                <div className="bg-primary/5 p-4 rounded-lg border border-primary/20 text-sm text-slate-700 animate-fade-in">
+                  <h4 className="font-semibold text-primary mb-2">
                     Cálculo de Peso Taxado (Aéreo)
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -670,14 +670,14 @@ export default function Upload() {
                         {watchedVolume || 0} × 166.667 = {pesoCubado.toFixed(2)} kg
                       </span>
                     </div>
-                    <div className="bg-blue-100/50 px-3 py-1.5 rounded-md">
-                      <span className="block text-blue-800 text-xs font-semibold">
+                    <div className="bg-primary/10 px-3 py-1.5 rounded-md">
+                      <span className="block text-primary text-xs font-semibold">
                         Peso Taxado a considerar
                       </span>
-                      <span className="font-bold text-blue-900">{pesoTaxado.toFixed(2)} kg</span>
+                      <span className="font-bold text-primary">{pesoTaxado.toFixed(2)} kg</span>
                     </div>
                   </div>
-                  <p className="text-xs text-blue-600/80 mt-2">
+                  <p className="text-xs text-primary/80 mt-2">
                     * O Peso Taxado é o maior valor entre o Peso Bruto e o Peso Cubado.
                   </p>
                 </div>
@@ -778,11 +778,11 @@ export default function Upload() {
           </div>
         )}
 
-        <div className="mt-8 bg-blue-50/80 border border-blue-100 rounded-lg p-5 flex gap-4 text-blue-800">
-          <Info className="h-6 w-6 shrink-0 mt-0.5 text-blue-600" />
+        <div className="mt-8 bg-primary/5 border border-primary/20 rounded-lg p-5 flex gap-4 text-slate-700">
+          <Info className="h-6 w-6 shrink-0 mt-0.5 text-primary" />
           <div className="text-sm space-y-2">
-            <p className="font-semibold text-blue-900 text-base">Instruções:</p>
-            <ul className="list-disc pl-5 space-y-1.5 text-blue-800/80">
+            <p className="font-semibold text-primary text-base">Instruções:</p>
+            <ul className="list-disc pl-5 space-y-1.5 text-slate-600">
               {wizardStep === 1 && (
                 <li>
                   Envie o documento de solicitação de carga para estabelecer os critérios da
