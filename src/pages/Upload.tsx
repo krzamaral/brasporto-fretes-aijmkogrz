@@ -43,15 +43,49 @@ import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`
 
-const pedidoSchema = z.object({
-  origem: z.string().min(1, 'Obrigatório'),
-  destino: z.string().min(1, 'Obrigatório'),
-  peso_bruto: z.number({ invalid_type_error: 'Obrigatório' }).min(0.1, 'Deve ser > 0'),
-  volume: z.number().optional().nullable(),
-  tipo_mercadoria: z.string().optional(),
-  modal_desejado: z.enum(['Aéreo', 'FCL', 'LCL']),
-  prazo_desejado_dias: z.number({ invalid_type_error: 'Deve ser um número' }).nullable().optional(),
-})
+const pedidoSchema = z
+  .object({
+    origem: z.string().min(1, 'Obrigatório'),
+    destino: z.string().min(1, 'Obrigatório'),
+    peso_bruto: z.number({ invalid_type_error: 'Deve ser um número' }).nullable().optional(),
+    volume: z.number({ invalid_type_error: 'Deve ser um número' }).nullable().optional(),
+    quantidade_containers: z
+      .number({ invalid_type_error: 'Deve ser um número' })
+      .nullable()
+      .optional(),
+    tipo_mercadoria: z.string().optional(),
+    modal_desejado: z.enum(['Aéreo', 'FCL', 'LCL']),
+    prazo_desejado_dias: z
+      .number({ invalid_type_error: 'Deve ser um número' })
+      .nullable()
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.modal_desejado === 'Aéreo' && (data.peso_bruto == null || data.peso_bruto <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Obrigatório para Aéreo',
+        path: ['peso_bruto'],
+      })
+    }
+    if (data.modal_desejado === 'LCL' && (data.volume == null || data.volume <= 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Obrigatório para LCL',
+        path: ['volume'],
+      })
+    }
+    if (
+      data.modal_desejado === 'FCL' &&
+      (data.quantidade_containers == null || data.quantidade_containers <= 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Obrigatório para FCL',
+        path: ['quantidade_containers'],
+      })
+    }
+  })
 
 type PedidoFormValues = z.infer<typeof pedidoSchema>
 
@@ -78,8 +112,9 @@ export default function Upload() {
     defaultValues: {
       origem: '',
       destino: '',
-      peso_bruto: 0,
+      peso_bruto: null,
       volume: null,
+      quantidade_containers: null,
       tipo_mercadoria: '',
       modal_desejado: 'Aéreo',
       prazo_desejado_dias: null,
@@ -204,8 +239,11 @@ export default function Upload() {
         form.reset({
           origem: extracted?.origem || '',
           destino: extracted?.destino || '',
-          peso_bruto: Number(extracted?.peso_bruto) || 0,
-          volume: Number(extracted?.volume) || null,
+          peso_bruto: extracted?.peso_bruto ? Number(extracted.peso_bruto) : null,
+          volume: extracted?.volume ? Number(extracted.volume) : null,
+          quantidade_containers: extracted?.quantidade_containers
+            ? Number(extracted.quantidade_containers)
+            : null,
           tipo_mercadoria: extracted?.tipo_mercadoria || '',
           modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted?.modal_desejado)
             ? extracted.modal_desejado
@@ -432,8 +470,11 @@ export default function Upload() {
       const pedidoPayload = {
         origem: data.origem,
         destino: data.destino,
-        peso_bruto: Number(data.peso_bruto),
+        peso_bruto: data.peso_bruto ? Number(data.peso_bruto) : null,
         volume: data.volume ? Number(data.volume) : undefined,
+        quantidade_containers: data.quantidade_containers
+          ? Number(data.quantidade_containers)
+          : null,
         tipo_mercadoria: data.tipo_mercadoria || '',
         modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(data.modal_desejado)
           ? (data.modal_desejado as 'Aéreo' | 'FCL' | 'LCL')
@@ -560,13 +601,19 @@ export default function Upload() {
                   name="peso_bruto"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Peso Bruto (kg)</FormLabel>
+                      <FormLabel>
+                        Peso Bruto (kg){' '}
+                        {watchedModal === 'Aéreo' && <span className="text-red-500">*</span>}
+                      </FormLabel>
                       <FormControl>
                         <Input
                           type="number"
                           step="0.1"
                           {...field}
-                          onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                          value={field.value ?? ''}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                          }
                         />
                       </FormControl>
                       <FormMessage />
@@ -578,14 +625,19 @@ export default function Upload() {
                   name="volume"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Volume (m³)</FormLabel>
+                      <FormLabel>
+                        Volume (m³){' '}
+                        {watchedModal === 'LCL' && <span className="text-red-500">*</span>}
+                      </FormLabel>
                       <FormControl>
                         <Input
                           type="number"
                           step="0.01"
                           {...field}
-                          value={field.value || ''}
-                          onChange={(e) => field.onChange(parseFloat(e.target.value) || null)}
+                          value={field.value ?? ''}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                          }
                         />
                       </FormControl>
                       <FormMessage />
@@ -627,6 +679,30 @@ export default function Upload() {
                     </FormItem>
                   )}
                 />
+                {watchedModal === 'FCL' && (
+                  <FormField
+                    control={form.control}
+                    name="quantidade_containers"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Qtd de Containers <span className="text-red-500">*</span>
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) =>
+                              field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
                 <FormField
                   control={form.control}
                   name="prazo_desejado_dias"
@@ -679,6 +755,39 @@ export default function Upload() {
                   </div>
                   <p className="text-xs text-primary/80 mt-2">
                     * O Peso Taxado é o maior valor entre o Peso Bruto e o Peso Cubado.
+                  </p>
+                </div>
+              )}
+
+              {watchedModal === 'LCL' && (
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 text-sm text-slate-700 animate-fade-in">
+                  <h4 className="font-semibold text-blue-800 mb-2">
+                    Cálculo de Peso Taxado (Marítimo LCL)
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <span className="block text-slate-500 text-xs">Peso Bruto</span>
+                      <span className="font-medium">{watchedPeso || 0} kg</span>
+                    </div>
+                    <div>
+                      <span className="block text-slate-500 text-xs">
+                        Peso Cubado (Volume m³ × 1.000)
+                      </span>
+                      <span className="font-medium">
+                        {watchedVolume || 0} × 1.000 = {((watchedVolume || 0) * 1000).toFixed(2)} kg
+                      </span>
+                    </div>
+                    <div className="bg-blue-100 px-3 py-1.5 rounded-md">
+                      <span className="block text-blue-800 text-xs font-semibold">
+                        Peso Taxado (W/M) a considerar
+                      </span>
+                      <span className="font-bold text-blue-800">
+                        {Math.max(watchedPeso || 0, (watchedVolume || 0) * 1000).toFixed(2)} kg
+                      </span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-blue-700 mt-2">
+                    * Fator Marítimo: 1 m³ = 1.000 kg. O valor taxado é a maior proporção (W/M).
                   </p>
                 </div>
               )}

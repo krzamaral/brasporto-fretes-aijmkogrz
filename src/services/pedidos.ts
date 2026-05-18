@@ -4,8 +4,9 @@ export interface Pedido {
   id: string
   origem: string
   destino: string
-  peso_bruto: number
-  volume?: number
+  peso_bruto?: number | null
+  volume?: number | null
+  quantidade_containers?: number | null
   tipo_mercadoria?: string
   modal_desejado: 'Aéreo' | 'FCL' | 'LCL'
   prazo_desejado_dias?: number | null

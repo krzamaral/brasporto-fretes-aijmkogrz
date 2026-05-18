@@ -159,7 +159,8 @@ export default function Review() {
 
         const pedVolume = ped.volume || 0
         const pedPeso = ped.peso_bruto || 0
-        const calcVolumetric = pedVolume * 166.67
+        const calcVolumetricAir = pedVolume * 166.67
+        const calcVolumetricLCL = pedVolume * 1000
 
         form.reset({
           quotes: combined.map((q) => {
@@ -167,7 +168,9 @@ export default function Review() {
             let taxable = q.taxable_weight ? Number(q.taxable_weight) : null
 
             if (modal === 'Aéreo') {
-              taxable = Number(Math.max(pedPeso, calcVolumetric).toFixed(2))
+              taxable = Number(Math.max(pedPeso, calcVolumetricAir).toFixed(2))
+            } else if (modal === 'LCL') {
+              taxable = Number(Math.max(pedPeso, calcVolumetricLCL).toFixed(2))
             }
 
             const unit_rate = q.unit_rate ? Number(q.unit_rate) : null
@@ -334,8 +337,12 @@ export default function Review() {
               <h4 className="font-semibold text-slate-800">Referência do Pedido</h4>
               <p className="text-sm text-slate-600 mb-1">
                 {pedido.origem} → {pedido.destino} | {pedido.modal_desejado} | Prazo alvo:{' '}
-                {pedido.prazo_desejado_dias ? `${pedido.prazo_desejado_dias} dias` : 'Não definido'}{' '}
-                | Peso: {pedido.peso_bruto}kg
+                {pedido.prazo_desejado_dias ? `${pedido.prazo_desejado_dias} dias` : 'Não definido'}
+                {pedido.peso_bruto ? ` | Peso: ${pedido.peso_bruto}kg` : ''}
+                {pedido.volume ? ` | Volume: ${pedido.volume}m³` : ''}
+                {pedido.quantidade_containers
+                  ? ` | Containers: ${pedido.quantidade_containers}`
+                  : ''}
               </p>
               <p className="text-sm text-slate-500">
                 Mercadoria: {pedido.tipo_mercadoria || 'Não especificada no documento'}

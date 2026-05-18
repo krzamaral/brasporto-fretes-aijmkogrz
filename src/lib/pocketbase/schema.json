@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-18T13:22:18.464Z",
+  "generatedAt": "2026-05-18T13:32:09.484Z",
   "collections": [
     {
       "name": "users",
@@ -215,7 +215,7 @@
         {
           "name": "peso_bruto",
           "type": "number",
-          "required": true,
+          "required": false,
           "system": false
         },
         {
@@ -270,6 +270,12 @@
           "required": false,
           "system": false,
           "autodateTriggers": ["onCreate", "onUpdate"]
+        },
+        {
+          "name": "quantidade_containers",
+          "type": "number",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": []
