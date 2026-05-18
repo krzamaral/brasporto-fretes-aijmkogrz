@@ -13,18 +13,25 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { getPedidos, type Pedido } from '@/services/pedidos'
-import { getHistoryQuotations, type Quotation } from '@/services/quotations'
-import { calculateExw } from '@/lib/utils'
+import { getHistoryQuotations, updateQuotation } from '@/services/quotations'
+import {
+  rankQuotations,
+  type EnrichedQuotation,
+  calculateChargeableWeight,
+} from '@/lib/freight-calculator'
+import { cn } from '@/lib/utils'
+import { useToast } from '@/hooks/use-toast'
 
 type HistoryRow = {
   pedido: Pedido
-  winner: Quotation | null
-  quotations: Quotation[]
+  winner: EnrichedQuotation | null
+  quotations: EnrichedQuotation[]
 }
 
 export default function History() {
   const [rows, setRows] = useState<HistoryRow[]>([])
   const [selectedRow, setSelectedRow] = useState<HistoryRow | null>(null)
+  const { toast } = useToast()
 
   useEffect(() => {
     async function loadData() {
@@ -35,8 +42,9 @@ export default function History() {
 
         const combined = concluded.map((p) => {
           const pQuotes = quotes.filter((q) => q.pedido_id === p.id)
-          const winner = pQuotes.length > 0 ? pQuotes[0] : null // already sorted by score desc
-          return { pedido: p, winner, quotations: pQuotes }
+          const ranked = rankQuotations(pQuotes, p)
+          const winner = ranked.length > 0 ? ranked[0] : null
+          return { pedido: p, winner, quotations: ranked }
         })
         setRows(combined)
       } catch (e) {
@@ -46,43 +54,29 @@ export default function History() {
     loadData()
   }, [])
 
-  const handlePrintModal = () => {
-    window.print()
+  const handlePrintModal = () => window.print()
+
+  const handleStatusChange = async (id: string, status: string) => {
+    try {
+      await updateQuotation(id, { status: status as any })
+      toast({ title: 'Status atualizado com sucesso' })
+      if (selectedRow) {
+        const updated = selectedRow.quotations.map((q) =>
+          q.id === id ? { ...q, status: status as any } : q,
+        )
+        setSelectedRow({ ...selectedRow, quotations: updated })
+      }
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar status', variant: 'destructive' })
+    }
   }
 
   const renderModalContent = (row: HistoryRow) => {
     const { pedido, quotations } = row
     const pesoBruto = pedido.peso_bruto || 0
     const volume = pedido.volume || 0
-    const volumetricWeightAir = (volume * 1000000) / 6000
+    const chargeableWeight = calculateChargeableWeight(pedido)
     const isAereo = pedido.modal_desejado === 'Aéreo'
-
-    const chargeableWeight = isAereo
-      ? Math.ceil(Math.max(pesoBruto, volumetricWeightAir))
-      : Math.max(pesoBruto / 1000, volume)
-
-    const sortedQuotations = [...quotations].sort((a, b) => {
-      const aTaxable = isAereo
-        ? Math.ceil(a.taxable_weight || chargeableWeight)
-        : a.taxable_weight || chargeableWeight
-      const bTaxable = isAereo
-        ? Math.ceil(b.taxable_weight || chargeableWeight)
-        : b.taxable_weight || chargeableWeight
-
-      const getTot = (q: Quotation, taxW: number) => {
-        const fUnit = q.cost_breakdown?.frete_unitario || 0
-        const fTot = q.cost_breakdown?.frete_peso || (fUnit > 0 ? fUnit * taxW : 0)
-        let tOrig = q.cost_breakdown?.taxas_origem || q.cost_breakdown?.origin_taxes || 0
-        if (q.cost_breakdown?.formula_origem) {
-          tOrig = calculateExw(q.cost_breakdown.formula_origem, taxW, tOrig)
-        }
-        const isEXW = pedido.incoterm === 'EXW'
-        const apOrig = isEXW ? tOrig : tOrig || 0
-        const computed = fTot + apOrig + (q.cost_breakdown?.destination_taxes || 0)
-        return computed > 0 ? computed : q.cost
-      }
-      return getTot(a, aTaxable) - getTot(b, bTaxable)
-    })
 
     return (
       <div
@@ -176,9 +170,8 @@ export default function History() {
 
         <div>
           <h2 className="text-lg font-bold text-slate-800 mb-4 print:text-black">
-            2. Ranking de Cotações & Memória de Cálculo
+            2. Ranking de Cotações & Comparativo
           </h2>
-
           {quotations.length === 0 ? (
             <div className="p-4 bg-slate-50 text-slate-500 text-center rounded border border-slate-200">
               Nenhuma cotação registrada para este pedido.
@@ -193,7 +186,7 @@ export default function History() {
                       Agente / Rota / Carrier
                     </th>
                     <th className="px-3 py-3 border-b print:border-slate-800 text-right">
-                      Peso Taxável (kg/cbm)
+                      Peso Taxável
                     </th>
                     <th className="px-3 py-3 border-b print:border-slate-800 text-right">
                       Frete Unit. (US$)
@@ -202,45 +195,22 @@ export default function History() {
                       Frete Total (US$)
                     </th>
                     <th className="px-3 py-3 border-b print:border-slate-800 text-right">
-                      Taxas Origem/EXW (US$)
+                      Taxas Origem/EXW
                     </th>
                     <th className="px-3 py-3 border-b print:border-slate-800 text-right">
                       Custo Total (US$)
                     </th>
                     <th className="px-3 py-3 border-b print:border-slate-800 text-center">Score</th>
+                    <th className="px-3 py-3 border-b print:border-slate-800 text-center print-hidden">
+                      Status
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 print:divide-slate-800">
-                  {sortedQuotations.map((q, index) => {
-                    const baseTaxable = q.taxable_weight ? q.taxable_weight : chargeableWeight
-                    const calcTaxable = isAereo ? Math.ceil(baseTaxable) : baseTaxable
-
-                    const freteUnitario = q.cost_breakdown?.frete_unitario || 0
-                    const freteTotal =
-                      q.cost_breakdown?.frete_peso ||
-                      (freteUnitario > 0 ? freteUnitario * calcTaxable : 0)
-                    let taxasOrigem =
-                      q.cost_breakdown?.taxas_origem || q.cost_breakdown?.origin_taxes || 0
-
-                    if (q.cost_breakdown?.formula_origem) {
-                      taxasOrigem = calculateExw(
-                        q.cost_breakdown.formula_origem,
-                        calcTaxable,
-                        taxasOrigem,
-                      )
-                    }
-
-                    const isIncotermEXW = pedido.incoterm === 'EXW'
-                    const showTaxasOrigem = isIncotermEXW ? taxasOrigem : taxasOrigem || 0
-
-                    const computedTotal =
-                      freteTotal + showTaxasOrigem + (q.cost_breakdown?.destination_taxes || 0)
-                    const displayTotal = computedTotal > 0 ? computedTotal : q.cost
-
+                  {quotations.map((q, index) => {
                     const agentDisplayName = q.option_description
                       ? `${q.agent_name} - ${q.option_description}`
                       : q.agent_name
-
                     return (
                       <tr
                         key={q.id}
@@ -249,46 +219,41 @@ export default function History() {
                         <td className="px-3 py-3 font-bold text-slate-500 print:text-black">
                           #{index + 1}
                         </td>
-                        <td
-                          className="px-3 py-3 font-semibold text-slate-800 print:text-black whitespace-normal max-w-[250px]"
-                          title={agentDisplayName}
-                        >
+                        <td className="px-3 py-3 font-semibold text-slate-800 print:text-black whitespace-normal max-w-[200px]">
                           {agentDisplayName}
                         </td>
                         <td className="px-3 py-3 text-right text-blue-700 font-bold bg-blue-50/30 print:text-black print:bg-transparent">
-                          {calcTaxable > 0 ? calcTaxable.toFixed(2) : '-'}
+                          {q.qTaxable.toFixed(2)}
                         </td>
                         <td className="px-3 py-3 text-right text-slate-600 print:text-black">
-                          {freteUnitario > 0 ? freteUnitario.toFixed(2) : '-'}
+                          {(q.cost_breakdown?.frete_unitario || 0) > 0
+                            ? (q.cost_breakdown?.frete_unitario || 0).toFixed(2)
+                            : '-'}
                         </td>
                         <td className="px-3 py-3 text-right text-slate-600 print:text-black">
-                          {freteTotal > 0 ? freteTotal.toFixed(2) : '-'}
+                          {q.freteTotal > 0 ? q.freteTotal.toFixed(2) : '-'}
                         </td>
-                        <td
-                          className="px-3 py-3 text-right text-slate-600 print:text-black"
-                          title={q.cost_breakdown?.formula_origem || 'Taxas de Origem'}
-                        >
-                          {showTaxasOrigem > 0 ? showTaxasOrigem.toFixed(2) : '-'}
-                          {q.cost_breakdown?.formula_origem && (
-                            <div className="text-[9px] text-slate-400 print:text-slate-600 leading-tight mt-0.5 truncate max-w-[120px] ml-auto">
-                              ({q.cost_breakdown.formula_origem})
-                            </div>
-                          )}
-                          {isIncotermEXW &&
-                            showTaxasOrigem > 0 &&
-                            !q.cost_breakdown?.formula_origem && (
-                              <div className="text-[10px] text-blue-600 print:text-black leading-tight mt-0.5">
-                                (EXW)
-                              </div>
-                            )}
+                        <td className="px-3 py-3 text-right text-slate-600 print:text-black">
+                          {q.appliedTaxasOrigem > 0 ? q.appliedTaxasOrigem.toFixed(2) : '-'}
                         </td>
                         <td className="px-3 py-3 text-right font-black text-slate-900 print:text-black text-sm">
-                          {displayTotal.toFixed(2)}
+                          {q.computedTotal.toFixed(2)}
                         </td>
                         <td className="px-3 py-3 text-center">
                           <span className="px-2 py-0.5 bg-slate-100 print:bg-transparent print:border print:border-black rounded-full font-bold text-slate-700 print:text-black">
-                            {q.score}
+                            {q.calculatedScore.toFixed(2)}
                           </span>
+                        </td>
+                        <td className="px-3 py-3 text-center print-hidden">
+                          <select
+                            className="w-full text-xs p-1 border rounded bg-white text-slate-800"
+                            value={q.status || 'em_analise'}
+                            onChange={(e) => handleStatusChange(q.id, e.target.value)}
+                          >
+                            <option value="em_analise">Em análise</option>
+                            <option value="aprovado">Aprovado</option>
+                            <option value="rejeitado">Rejeitado</option>
+                          </select>
                         </td>
                       </tr>
                     )
@@ -298,6 +263,51 @@ export default function History() {
             </div>
           )}
         </div>
+
+        {quotations.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-lg font-bold text-slate-800 mb-4 print:text-black">
+              3. Memória de Cálculo Detalhada
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {quotations.map((q) => (
+                <div
+                  key={q.id}
+                  className="border border-slate-200 p-3 rounded bg-slate-50 print:bg-transparent print:border-slate-300"
+                >
+                  <h4 className="font-bold text-slate-800 print:text-black">{q.agent_name}</h4>
+                  <ul className="text-xs text-slate-600 print:text-black space-y-1.5 mt-3">
+                    <li>
+                      <strong>Frete Base:</strong> USD {q.freteTotal.toFixed(2)}
+                    </li>
+                    <li>
+                      <strong>EXW/Origem:</strong> USD {q.appliedTaxasOrigem.toFixed(2)} <br />
+                      <span className="text-[10px] text-slate-500">{q.exwLog}</span>
+                    </li>
+                    {q.pickupFee > 0 && (
+                      <li>
+                        <strong>Pickup Fee:</strong> USD {q.pickupFee.toFixed(2)}
+                      </li>
+                    )}
+                    {q.addTaxesLog.map((log, i) => (
+                      <li key={i}>
+                        <strong>Adicional:</strong> {log}
+                      </li>
+                    ))}
+                    {q.destinationTaxes > 0 && (
+                      <li>
+                        <strong>Destino:</strong> USD {q.destinationTaxes.toFixed(2)}
+                      </li>
+                    )}
+                    <li className="pt-2 border-t border-slate-200 mt-2 font-black text-slate-800 text-sm">
+                      TOTAL: USD {q.computedTotal.toFixed(2)}
+                    </li>
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="mt-8 pt-4 border-t border-slate-200 print:border-slate-800 text-xs text-slate-400 print:text-black text-center print:block hidden">
           Documento gerado pelo sistema Brasporto Fretes em {new Date().toLocaleString('pt-BR')}
@@ -312,14 +322,7 @@ export default function History() {
         @media print { 
           body * { visibility: hidden; }
           #history-print-area, #history-print-area * { visibility: visible; }
-          #history-print-area { 
-            position: absolute; 
-            left: 0; 
-            top: 0; 
-            width: 100%; 
-            margin: 0;
-            padding: 0;
-          }
+          #history-print-area { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
           @page { size: landscape; margin: 5mm; }
         }
       `}</style>
@@ -327,7 +330,7 @@ export default function History() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 print:hidden gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-800 flex items-center gap-2">
-            <HistoryIcon className="h-6 w-6 text-blue-600" /> Histórico da Empresa
+            <HistoryIcon className="h-6 w-6 text-blue-600" /> Histórico de Processos
           </h2>
           <p className="text-muted-foreground">
             Decisões finais de frete processadas recentemente.
@@ -353,45 +356,15 @@ export default function History() {
                   <th className="px-4 py-3 rounded-tl-lg">Data</th>
                   <th className="px-4 py-3">Pedido (Origem → Destino)</th>
                   <th className="px-4 py-3">Modal</th>
-                  <th className="px-4 py-3">Fornecedor Vencedor</th>
-                  <th className="px-4 py-3 text-right">Custo Vencedor (US$)</th>
-                  <th className="px-4 py-3 text-center">Score</th>
-                  <th className="px-4 py-3">Usuário</th>
+                  <th className="px-4 py-3">Melhor Opção (Rank 1)</th>
+                  <th className="px-4 py-3 text-right">Custo Rank 1 (US$)</th>
+                  <th className="px-4 py-3 text-center">Score Rank 1</th>
                   <th className="px-4 py-3 rounded-tr-lg text-right">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => {
                   const { pedido, winner } = row
-
-                  let displayCost = winner?.cost || 0
-                  if (winner) {
-                    const isAereo = pedido.modal_desejado === 'Aéreo'
-                    const pVol = ((pedido.volume || 0) * 1000000) / 6000
-                    const pPeso = pedido.peso_bruto || 0
-                    const chargeableWeight = isAereo
-                      ? Math.ceil(Math.max(pPeso, pVol))
-                      : Math.max(pPeso / 1000, pedido.volume || 0)
-                    const qTaxable = isAereo
-                      ? Math.ceil(winner.taxable_weight || chargeableWeight)
-                      : winner.taxable_weight || chargeableWeight
-
-                    const fUnit = winner.cost_breakdown?.frete_unitario || 0
-                    const fTot =
-                      winner.cost_breakdown?.frete_peso || (fUnit > 0 ? fUnit * qTaxable : 0)
-                    let tOrig =
-                      winner.cost_breakdown?.taxas_origem ||
-                      winner.cost_breakdown?.origin_taxes ||
-                      0
-                    if (winner.cost_breakdown?.formula_origem) {
-                      tOrig = calculateExw(winner.cost_breakdown.formula_origem, qTaxable, tOrig)
-                    }
-                    const isEXW = pedido.incoterm === 'EXW'
-                    const apOrig = isEXW ? tOrig : tOrig || 0
-                    const computed = fTot + apOrig + (winner.cost_breakdown?.destination_taxes || 0)
-                    displayCost = computed > 0 ? computed : winner.cost
-                  }
-
                   return (
                     <tr
                       key={pedido.id}
@@ -416,24 +389,19 @@ export default function History() {
                         </div>
                       </td>
                       <td className="px-4 py-3 font-semibold text-blue-700">
-                        {winner
-                          ? `${winner.agent_name}${winner.option_description ? ' - ' + winner.option_description : ''}`
-                          : '-'}
+                        {winner ? `${winner.agent_name}` : '-'}
                       </td>
                       <td className="px-4 py-3 font-semibold text-slate-800 text-right">
-                        {winner ? displayCost.toFixed(2) : '-'}
+                        {winner ? winner.computedTotal.toFixed(2) : '-'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {winner ? (
                           <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-bold">
-                            {winner.score}
+                            {winner.calculatedScore.toFixed(2)}
                           </span>
                         ) : (
                           '-'
                         )}
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 truncate max-w-[150px]">
-                        {pedido.expand?.user_id?.name || 'Sistema'}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <Button variant="secondary" size="sm" onClick={() => setSelectedRow(row)}>
@@ -452,11 +420,9 @@ export default function History() {
       <Dialog open={!!selectedRow} onOpenChange={(open) => !open && setSelectedRow(null)}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto print:max-w-none print:max-h-none print:overflow-visible print:border-none print:shadow-none p-0">
           <DialogHeader className="p-6 pb-0 print:hidden">
-            <DialogTitle>Detalhes da Cotação</DialogTitle>
+            <DialogTitle>Detalhes do Histórico</DialogTitle>
           </DialogHeader>
-
           <div className="p-6 pt-2 print:p-0">{selectedRow && renderModalContent(selectedRow)}</div>
-
           <div className="absolute top-4 right-4 print:hidden flex gap-2">
             <Button
               onClick={handlePrintModal}

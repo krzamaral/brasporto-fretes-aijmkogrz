@@ -2,13 +2,18 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { FileDown, Bot, Loader2, ArrowLeft, Check, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { getQuotationsByPedido, analisarCotacoesIA, type Quotation } from '@/services/quotations'
+import { getQuotationsByPedido, analisarCotacoesIA, updateQuotation } from '@/services/quotations'
 import { getPedido, type Pedido } from '@/services/pedidos'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { Stepper } from '@/components/Stepper'
-import { cn, calculateExw } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useRealtime } from '@/hooks/use-realtime'
+import {
+  rankQuotations,
+  type EnrichedQuotation,
+  calculateChargeableWeight,
+} from '@/lib/freight-calculator'
 
 export default function Ranking() {
   const location = useLocation()
@@ -16,7 +21,7 @@ export default function Ranking() {
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  const [quotations, setQuotations] = useState<Quotation[]>([])
+  const [quotations, setQuotations] = useState<EnrichedQuotation[]>([])
   const [pedido, setPedido] = useState<Pedido | null>(null)
   const [isAiLoading, setIsAiLoading] = useState(false)
   const [aiComment, setAiComment] = useState<string>('')
@@ -30,19 +35,18 @@ export default function Ranking() {
     try {
       const [ped, quots] = await Promise.all([getPedido(pedidoId), getQuotationsByPedido(pedidoId)])
       setPedido(ped)
-      setQuotations(quots)
 
-      if (quots.length > 0) {
-        const sorted = [...quots].sort((a, b) => getScore(b) - getScore(a))
-        const topOption = sorted[0]
+      const ranked = rankQuotations(quots, ped)
+      setQuotations(ranked)
+
+      if (ranked.length > 0 && !aiComment) {
+        const topOption = ranked[0]
         const topAgentName = topOption.option_description
           ? `${topOption.agent_name} - ${topOption.option_description}`
           : topOption.agent_name
 
         setAiComment(
-          (prev) =>
-            prev ||
-            `A opção ${topAgentName} é a recomendada por apresentar o melhor custo-benefício (US$ ${topOption.cost.toFixed(2)}) e score operacional de ${getScore(topOption).toFixed(2)}, garantindo atendimento ao destino de forma eficiente.`,
+          `A opção ${topAgentName} é a recomendada por apresentar o melhor custo-benefício (US$ ${topOption.computedTotal.toFixed(2)}) e score operacional de ${topOption.calculatedScore.toFixed(2)}, garantindo atendimento ao destino de forma eficiente.`,
         )
       }
     } catch (e) {
@@ -57,7 +61,6 @@ export default function Ranking() {
   useRealtime('quotations', () => {
     loadData()
   })
-
   useRealtime('pedidos', () => {
     loadData()
   })
@@ -74,11 +77,11 @@ export default function Ranking() {
             ? `${q.agent_name} - ${q.option_description}`
             : q.agent_name,
           modal: q.modal,
-          cost: q.cost,
+          cost: q.computedTotal,
           transit_time: q.transit_time,
           etd: q.etd || new Date().toISOString(),
           free_time: q.free_time || 0,
-          taxable_weight: q.taxable_weight || 0,
+          taxable_weight: q.qTaxable,
         })),
         prazo_desejado_dias: pedido.prazo_desejado_dias || null,
         origem: pedido.origem,
@@ -107,32 +110,13 @@ export default function Ranking() {
     }
   }
 
-  const getScore = (q: Quotation) => {
-    let score = q.score || 0
-    if (score > 1 && score <= 100) return score / 100
-    if (score > 100) return 1
-    return score
-  }
-
-  const getScoreColor = (score: number) => {
-    if (score >= 0.8) return 'bg-[#c6e5b1] text-green-900'
-    if (score >= 0.6) return 'bg-[#fff2cc] text-yellow-900'
-    if (score >= 0.4) return 'bg-[#f8cbad] text-orange-900'
-    return 'bg-[#f4b084] text-red-900'
-  }
-
-  const getComputedTotal = (q: Quotation, calcTaxable: number) => {
-    const freteUnitario = q.cost_breakdown?.frete_unitario || 0
-    const freteTotal =
-      q.cost_breakdown?.frete_peso || (freteUnitario > 0 ? freteUnitario * calcTaxable : 0)
-    let taxasOrigem = q.cost_breakdown?.taxas_origem || q.cost_breakdown?.origin_taxes || 0
-    if (q.cost_breakdown?.formula_origem) {
-      taxasOrigem = calculateExw(q.cost_breakdown.formula_origem, calcTaxable, taxasOrigem)
+  const handleStatusChange = async (id: string, status: string) => {
+    try {
+      await updateQuotation(id, { status: status as any })
+      toast({ title: 'Status atualizado com sucesso' })
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar status', variant: 'destructive' })
     }
-    const isEXW = pedido?.incoterm === 'EXW'
-    const appliedTaxasOrigem = isEXW ? taxasOrigem : taxasOrigem || 0
-    const computed = freteTotal + appliedTaxasOrigem + (q.cost_breakdown?.destination_taxes || 0)
-    return computed > 0 ? computed : q.cost
   }
 
   if (!pedido) {
@@ -143,51 +127,21 @@ export default function Ranking() {
     )
   }
 
-  const volume = pedido.volume || 0
   const pesoBruto = pedido.peso_bruto || 0
-  // Volumetric Weight for Air: Length(cm) x Width(cm) x Height(cm) / 6000
-  // Since volume is in CBM (m³), 1 CBM = 1,000,000 cm³. So 1,000,000 / 6000 = 166.666...
-  const volumetricWeightAir = (volume * 1000000) / 6000
+  const chargeableWeight = calculateChargeableWeight(pedido)
 
-  // Taxable Weight Logic
-  const chargeableWeight =
-    pedido.modal_desejado === 'Aéreo'
-      ? Math.ceil(Math.max(pesoBruto, volumetricWeightAir))
-      : Math.max(pesoBruto / 1000, volume)
+  const top1 = quotations[0]
+  const top2 = quotations[1]
 
-  const sortedQuots = [...quotations].sort((a, b) => {
-    const scoreDiff = getScore(b) - getScore(a)
-    if (scoreDiff !== 0) return scoreDiff
-    const aTaxable =
-      pedido.modal_desejado === 'Aéreo'
-        ? Math.ceil(a.taxable_weight || chargeableWeight)
-        : a.taxable_weight || chargeableWeight
-    const bTaxable =
-      pedido.modal_desejado === 'Aéreo'
-        ? Math.ceil(b.taxable_weight || chargeableWeight)
-        : b.taxable_weight || chargeableWeight
-    return getComputedTotal(a, aTaxable) - getComputedTotal(b, bTaxable)
-  })
+  const diffAbs = top2 && top1 ? top2.computedTotal - top1.computedTotal : 0
+  const diffPct = top2 && top1 && top1.computedTotal > 0 ? (diffAbs / top1.computedTotal) * 100 : 0
 
-  const top1 = sortedQuots[0]
-  const top2 = sortedQuots[1]
-
-  const top1Taxable = top1
-    ? pedido.modal_desejado === 'Aéreo'
-      ? Math.ceil(top1.taxable_weight || chargeableWeight)
-      : top1.taxable_weight || chargeableWeight
-    : 0
-  const top2Taxable = top2
-    ? pedido.modal_desejado === 'Aéreo'
-      ? Math.ceil(top2.taxable_weight || chargeableWeight)
-      : top2.taxable_weight || chargeableWeight
-    : 0
-
-  const top1Cost = top1 ? getComputedTotal(top1, top1Taxable) : 0
-  const top2Cost = top2 ? getComputedTotal(top2, top2Taxable) : 0
-
-  const diffAbs = top2 && top1 ? top2Cost - top1Cost : 0
-  const diffPct = top2 && top1 && top1Cost > 0 ? (diffAbs / top1Cost) * 100 : 0
+  const getScoreColor = (score: number) => {
+    if (score >= 0.8) return 'bg-[#c6e5b1] text-green-900'
+    if (score >= 0.6) return 'bg-[#fff2cc] text-yellow-900'
+    if (score >= 0.4) return 'bg-[#f8cbad] text-orange-900'
+    return 'bg-[#f4b084] text-red-900'
+  }
 
   const Th = ({ children, className, colSpan, rowSpan }: any) => (
     <th
@@ -317,28 +271,19 @@ export default function Ranking() {
           </table>
         </div>
 
-        {/* Stepper */}
         <div className="print-hidden">
           <Stepper currentStep={5} />
         </div>
 
         {/* 3 Columns Data Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 print:grid-cols-3 gap-4 items-stretch">
-          {/* Column 1: Client Request */}
+          {/* Column 1 */}
           <div className="flex flex-col">
             <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
-              RESUMO DA SOLICITAÇÃO DO CLIENTE (E-MAIL)
+              RESUMO DA SOLICITAÇÃO
             </div>
             <table className="w-full border-collapse flex-1 bg-white">
               <tbody>
-                <tr>
-                  <LabelTd>Cliente:</LabelTd>
-                  <Td>-</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Referência Cliente:</LabelTd>
-                  <Td>-</Td>
-                </tr>
                 <tr>
                   <LabelTd>Modal:</LabelTd>
                   <Td>{pedido.modal_desejado}</Td>
@@ -348,149 +293,85 @@ export default function Ranking() {
                   <Td>{pedido.incoterm}</Td>
                 </tr>
                 <tr>
-                  <LabelTd>Origem (Coleta):</LabelTd>
+                  <LabelTd>Origem:</LabelTd>
                   <Td>{pedido.origem}</Td>
                 </tr>
                 <tr>
-                  <LabelTd>Destino (Entrega):</LabelTd>
+                  <LabelTd>Destino:</LabelTd>
                   <Td>{pedido.destino}</Td>
                 </tr>
                 <tr>
-                  <LabelTd>Ready Date:</LabelTd>
-                  <Td>-</Td>
-                </tr>
-                <tr>
-                  <LabelTd>ETA Máximo / Prazo:</LabelTd>
+                  <LabelTd>ETA Máximo:</LabelTd>
                   <Td>{pedido.prazo_desejado_dias ? `${pedido.prazo_desejado_dias} dias` : '-'}</Td>
                 </tr>
                 <tr>
-                  <LabelTd>Descrição da Carga:</LabelTd>
+                  <LabelTd>Mercadoria:</LabelTd>
                   <Td>{pedido.tipo_mercadoria || '-'}</Td>
                 </tr>
                 <tr>
-                  <LabelTd>NCM:</LabelTd>
-                  <Td>-</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Valor Mercadoria:</LabelTd>
-                  <Td>-</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Observações:</LabelTd>
-                  <Td>-</Td>
+                  <LabelTd>Dimensões:</LabelTd>
+                  <Td>
+                    {pedido.comprimento && pedido.largura && pedido.altura
+                      ? `${pedido.comprimento}x${pedido.largura}x${pedido.altura} cm`
+                      : '-'}
+                  </Td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          {/* Column 2: Logistics Validation */}
+          {/* Column 2 */}
           <div className="flex flex-col">
             <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
-              DADOS CONFIRMADOS NA VALIDAÇÃO LOGÍSTICA
+              VALIDAÇÃO LOGÍSTICA
             </div>
             <table className="w-full border-collapse flex-1 bg-white">
               <tbody>
                 <tr>
-                  <LabelTd>Referência / Processo:</LabelTd>
+                  <LabelTd>Referência:</LabelTd>
                   <Td>{pedido.id.slice(0, 6).toUpperCase()}</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Cliente:</LabelTd>
-                  <Td>-</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Modal:</LabelTd>
-                  <Td>{pedido.modal_desejado}</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Incoterm:</LabelTd>
-                  <Td>{pedido.incoterm}</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Origem (Coleta):</LabelTd>
-                  <Td>{pedido.origem}</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Destino (Entrega):</LabelTd>
-                  <Td>{pedido.destino}</Td>
                 </tr>
                 <tr>
                   <LabelTd>Peso Bruto Total:</LabelTd>
                   <Td>{pesoBruto.toFixed(2)} kg</Td>
                 </tr>
                 <tr>
-                  <LabelTd>Peso Taxável (Max):</LabelTd>
+                  <LabelTd>Peso Taxável (Base):</LabelTd>
                   <Td className="font-bold text-slate-800">
-                    {Math.max(
-                      ...quotations.map((q) =>
-                        pedido.modal_desejado === 'Aéreo'
-                          ? Math.ceil(q.taxable_weight || chargeableWeight)
-                          : q.taxable_weight || chargeableWeight,
-                      ),
-                      chargeableWeight,
-                    ).toFixed(2)}{' '}
+                    {chargeableWeight.toFixed(2)}{' '}
                     {pedido.modal_desejado === 'Aéreo' ? 'kg' : 'ton/cbm'}
                   </Td>
                 </tr>
                 <tr>
-                  <LabelTd>Quantidade de Volumes:</LabelTd>
+                  <LabelTd>Quantidade Vol:</LabelTd>
                   <Td>{pedido.quantidade_containers || '-'}</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Dimensões (cm):</LabelTd>
-                  <Td>-</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Commodity / NCM:</LabelTd>
-                  <Td>{pedido.tipo_mercadoria || '-'}</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Ready Date:</LabelTd>
-                  <Td>-</Td>
-                </tr>
-                <tr>
-                  <LabelTd>ETA Máximo / Prazo:</LabelTd>
-                  <Td>{pedido.prazo_desejado_dias ? `${pedido.prazo_desejado_dias} dias` : '-'}</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Observações:</LabelTd>
-                  <Td>-</Td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          {/* Column 3: Conformity Checklist */}
+          {/* Column 3 */}
           <div className="flex flex-col">
             <div className="bg-[#009b7c] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
-              CONFORMIDADE CLIENTE x VALIDAÇÃO
+              CONFORMIDADE
             </div>
             <table className="w-full border-collapse flex-1 bg-white">
               <tbody>
-                {[
-                  'Cliente',
-                  'Referência / Processo',
-                  'Modal',
-                  'Incoterm',
-                  'Origem',
-                  'Destino',
-                  'Peso',
-                  'Dimensões / Volumes',
-                  'Ready Date',
-                  'ETA Máximo',
-                ].map((item) => (
-                  <tr key={item}>
-                    <td className="border border-slate-300 px-2 py-[7px] text-xs font-semibold text-slate-700 bg-slate-50">
-                      {item}
-                    </td>
-                    <td className="border border-slate-300 px-2 text-center text-green-600 font-bold bg-green-50 w-16">
-                      OK
-                    </td>
-                    <td className="border border-slate-300 px-2 text-center w-10 bg-green-50">
-                      <Check className="h-4 w-4 text-green-600 mx-auto" />
-                    </td>
-                  </tr>
-                ))}
+                {['Referência', 'Modal', 'Incoterm', 'Origem', 'Destino', 'Peso', 'ETA Máximo'].map(
+                  (item) => (
+                    <tr key={item}>
+                      <td className="border border-slate-300 px-2 py-[7px] text-xs font-semibold text-slate-700 bg-slate-50">
+                        {item}
+                      </td>
+                      <td className="border border-slate-300 px-2 text-center text-green-600 font-bold bg-green-50 w-16">
+                        OK
+                      </td>
+                      <td className="border border-slate-300 px-2 text-center w-10 bg-green-50">
+                        <Check className="h-4 w-4 text-green-600 mx-auto" />
+                      </td>
+                    </tr>
+                  ),
+                )}
                 <tr>
                   <td
                     colSpan={2}
@@ -518,112 +399,42 @@ export default function Ranking() {
           <table className="w-full text-center border-collapse whitespace-nowrap min-w-[1000px] print:min-w-0 print:whitespace-normal bg-white">
             <thead>
               <tr>
-                <Th rowSpan={2} className="w-[12%]">
-                  AGENTE /<br />
-                  ROTA
-                </Th>
-                <Th rowSpan={2} className="w-[6%]">
-                  MODAL
-                </Th>
+                <Th rowSpan={2}>AGENTE / ROTA</Th>
+                <Th rowSpan={2}>MODAL</Th>
                 <Th colSpan={5}>MEMÓRIA DE CÁLCULO (USD)</Th>
                 <Th colSpan={3}>OPERAÇÃO</Th>
-                <Th colSpan={3}>VALIDAÇÃO (x LOGÍSTICA)</Th>
-                <Th rowSpan={2} className="w-[8%]">
+                <Th colSpan={2}>VALIDAÇÃO</Th>
+                <Th rowSpan={2}>
                   SCORE
-                  <br />
-                  OPERACIONAL
                   <br />
                   (0 a 1)
                 </Th>
+                <Th rowSpan={2} className="print-hidden">
+                  STATUS
+                </Th>
               </tr>
               <tr>
-                <Th>
-                  Peso Taxável
-                  <br />
-                  (KG/CBM)
-                </Th>
-                <Th>
-                  Unitário do Frete
-                  <br />
-                  (USD)
-                </Th>
-                <Th>
-                  Total do Frete
-                  <br />
-                  Peso
-                </Th>
-                <Th>
-                  Despesas e Taxas
-                  <br />
-                  de Origem (EXW)
-                </Th>
-                <Th className="bg-slate-200 text-slate-900">
-                  Valor
-                  <br />
-                  Total
-                </Th>
-                <Th>
-                  Transit Time
-                  <br />
-                  (dias)
-                </Th>
+                <Th>Peso Taxável</Th>
+                <Th>Frete Unit.</Th>
+                <Th>Frete Total</Th>
+                <Th>EXW / Origem</Th>
+                <Th className="bg-slate-200 text-slate-900">Total Global</Th>
+                <Th>Transit Time</Th>
                 <Th>Frequência</Th>
-                <Th>
-                  Validade da
-                  <br />
-                  Cotação
-                </Th>
-                <Th>
-                  Ready
-                  <br />
-                  Date OK
-                </Th>
-                <Th>
-                  Prazo
-                  <br />
-                  Entrega OK
-                </Th>
-                <Th>
-                  Destino
-                  <br />
-                  OK
-                </Th>
+                <Th>Validade</Th>
+                <Th>Prazo OK</Th>
+                <Th>Destino OK</Th>
               </tr>
             </thead>
             <tbody>
-              {sortedQuots.map((q) => {
-                const score = getScore(q)
-                const scoreColor = getScoreColor(score)
+              {quotations.map((q) => {
                 const prazoOk =
                   pedido.prazo_desejado_dias && q.transit_time
                     ? q.transit_time <= pedido.prazo_desejado_dias
                     : true
-
-                // Agent Identification: "The UI must concatenate Agent Name + Carrier + Route"
-                // Assuming option_description holds Carrier/Route if parsed, otherwise we fallback
                 const agentDisplayName = q.option_description
                   ? `${q.agent_name} - ${q.option_description}`
                   : q.agent_name
-
-                const baseTaxable = q.taxable_weight ? q.taxable_weight : chargeableWeight
-                const calcTaxable =
-                  pedido.modal_desejado === 'Aéreo' ? Math.ceil(baseTaxable) : baseTaxable
-                const freteUnitario = q.cost_breakdown?.frete_unitario || 0
-                const freteTotal =
-                  q.cost_breakdown?.frete_peso ||
-                  (freteUnitario > 0 ? freteUnitario * calcTaxable : 0)
-
-                let taxasOrigem =
-                  q.cost_breakdown?.taxas_origem || q.cost_breakdown?.origin_taxes || 0
-                if (q.cost_breakdown?.formula_origem) {
-                  taxasOrigem = calculateExw(
-                    q.cost_breakdown.formula_origem,
-                    calcTaxable,
-                    taxasOrigem,
-                  )
-                }
-
-                const displayTotal = getComputedTotal(q, calcTaxable)
 
                 return (
                   <tr key={q.id} className="hover:bg-slate-50 transition-colors">
@@ -635,28 +446,23 @@ export default function Ranking() {
                     </Td>
                     <Td>{q.modal}</Td>
                     <Td className="font-semibold text-blue-700 bg-blue-50/30">
-                      {calcTaxable.toFixed(2)}
+                      {q.qTaxable.toFixed(2)}
                     </Td>
-                    <Td>{freteUnitario > 0 ? freteUnitario.toFixed(2) : '-'}</Td>
-                    <Td>{freteTotal > 0 ? freteTotal.toFixed(2) : '-'}</Td>
+                    <Td>
+                      {(q.cost_breakdown?.frete_unitario || 0) > 0
+                        ? (q.cost_breakdown?.frete_unitario || 0).toFixed(2)
+                        : '-'}
+                    </Td>
+                    <Td>{q.freteTotal > 0 ? q.freteTotal.toFixed(2) : '-'}</Td>
                     <Td title={q.cost_breakdown?.formula_origem || 'Taxa Origem'}>
-                      {taxasOrigem > 0 ? taxasOrigem.toFixed(2) : '-'}
-                      {q.cost_breakdown?.formula_origem && (
-                        <div
-                          className="text-[9px] text-slate-400 mt-0.5 max-w-[120px] truncate mx-auto"
-                          title={q.cost_breakdown.formula_origem}
-                        >
-                          ({q.cost_breakdown.formula_origem})
-                        </div>
-                      )}
+                      {q.appliedTaxasOrigem > 0 ? q.appliedTaxasOrigem.toFixed(2) : '-'}
                     </Td>
                     <Td className="font-bold bg-slate-50 text-slate-900">
-                      {displayTotal.toFixed(2)}
+                      {q.computedTotal.toFixed(2)}
                     </Td>
-                    <Td>{q.transit_time ? `${q.transit_time} a ${q.transit_time + 1}` : '-'}</Td>
+                    <Td>{q.transit_time ? `${q.transit_time} dias` : '-'}</Td>
                     <Td>Semanal</Td>
                     <Td>{q.etd ? new Date(q.etd).toLocaleDateString('pt-BR') : '-'}</Td>
-                    <Td className="text-green-600 font-bold bg-green-50/50">OK</Td>
                     <Td
                       className={cn(
                         'font-bold',
@@ -666,8 +472,24 @@ export default function Ranking() {
                       {prazoOk ? 'OK' : 'NÃO'}
                     </Td>
                     <Td className="text-green-600 font-bold bg-green-50/50">SIM</Td>
-                    <Td className={cn('font-bold text-[13px] border border-slate-300', scoreColor)}>
-                      {score.toFixed(2)}
+                    <Td
+                      className={cn(
+                        'font-bold text-[13px] border border-slate-300',
+                        getScoreColor(q.calculatedScore),
+                      )}
+                    >
+                      {q.calculatedScore.toFixed(2)}
+                    </Td>
+                    <Td className="print-hidden w-28 text-center p-1">
+                      <select
+                        className="w-full text-xs p-1 border rounded bg-white text-slate-800"
+                        value={q.status || 'em_analise'}
+                        onChange={(e) => handleStatusChange(q.id, e.target.value)}
+                      >
+                        <option value="em_analise">Em análise</option>
+                        <option value="aprovado">Aprovado</option>
+                        <option value="rejeitado">Rejeitado</option>
+                      </select>
                     </Td>
                   </tr>
                 )
@@ -684,222 +506,55 @@ export default function Ranking() {
               )}
             </tbody>
           </table>
-          <p className="text-[10px] text-slate-500 mt-1.5 font-medium">
-            Obs.: Valores de Free Time / Demurrage / Detention são aplicáveis apenas para
-            modalidades marítimas (LCL / FCL).
-          </p>
         </div>
 
-        {/* Footer Data Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 print:grid-cols-12 gap-4 items-stretch">
-          {/* Decision Summary (Col 1-7) */}
-          <div className="lg:col-span-7 print:col-span-7 flex flex-col">
-            <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
-              RESUMO DA DECISÃO
-            </div>
-            <div className="grid grid-cols-5 border border-slate-300 border-t-0 bg-white flex-1">
-              {/* Option 1 */}
-              <div className="col-span-2 border-r border-slate-300 flex flex-col">
-                <div className="bg-slate-100 font-bold text-slate-800 text-center py-1.5 text-[10px] border-b border-slate-300 tracking-wide">
-                  MELHOR OPÇÃO (Ranking 1)
+        {/* Memoria de Calculo Section */}
+        {quotations.length > 0 && (
+          <div className="mt-6">
+            <h3 className="font-bold text-lg text-slate-800 mb-3 print:text-black">
+              Detalhamento Financeiro / Memória de Cálculo
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {quotations.map((q) => (
+                <div
+                  key={q.id}
+                  className="border border-slate-200 p-3 rounded bg-slate-50 print:bg-transparent print:border-slate-300"
+                >
+                  <h4 className="font-bold text-slate-800 print:text-black">
+                    {q.agent_name} {q.option_description ? `- ${q.option_description}` : ''}
+                  </h4>
+                  <ul className="text-xs text-slate-600 print:text-black space-y-1.5 mt-3">
+                    <li>
+                      <strong>Frete Base:</strong> USD {q.freteTotal.toFixed(2)}
+                    </li>
+                    <li>
+                      <strong>EXW/Origem:</strong> USD {q.appliedTaxasOrigem.toFixed(2)} <br />
+                      <span className="text-[10px] text-slate-500">{q.exwLog}</span>
+                    </li>
+                    {q.pickupFee > 0 && (
+                      <li>
+                        <strong>Pickup Fee:</strong> USD {q.pickupFee.toFixed(2)}
+                      </li>
+                    )}
+                    {q.addTaxesLog.map((log, i) => (
+                      <li key={i}>
+                        <strong>Adicional:</strong> {log}
+                      </li>
+                    ))}
+                    {q.destinationTaxes > 0 && (
+                      <li>
+                        <strong>Destino:</strong> USD {q.destinationTaxes.toFixed(2)}
+                      </li>
+                    )}
+                    <li className="pt-2 border-t border-slate-200 mt-2 font-black text-slate-800 text-sm">
+                      TOTAL: USD {q.computedTotal.toFixed(2)}
+                    </li>
+                  </ul>
                 </div>
-                <table className="w-full text-[11px] flex-1">
-                  <tbody>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600 border-b border-slate-200">
-                        Agente:
-                      </td>
-                      <td
-                        className="px-2 py-[5px] text-right font-bold text-slate-800 border-b border-slate-200 truncate max-w-[120px]"
-                        title={
-                          top1
-                            ? `${top1.agent_name}${top1.option_description ? ` - ${top1.option_description}` : ''}`
-                            : undefined
-                        }
-                      >
-                        {top1
-                          ? `${top1.agent_name}${top1.option_description ? ` - ${top1.option_description}` : ''}`
-                          : '-'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600 border-b border-slate-200">
-                        Total Geral:
-                      </td>
-                      <td className="px-2 py-[5px] text-right font-bold text-green-700 border-b border-slate-200">
-                        USD {top1 ? top1Cost.toFixed(2) : '-'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600 border-b border-slate-200">
-                        Transit Time:
-                      </td>
-                      <td className="px-2 py-[5px] text-right font-medium text-slate-800 border-b border-slate-200">
-                        {top1?.transit_time ? `${top1.transit_time} dias` : '-'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600 border-b border-slate-200">
-                        Score Operacional:
-                      </td>
-                      <td
-                        className={cn(
-                          'px-2 py-[5px] text-right font-bold border-b border-slate-200',
-                          top1 ? getScoreColor(getScore(top1)) : '',
-                        )}
-                      >
-                        {top1 ? getScore(top1).toFixed(2) : '-'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600">Elegível:</td>
-                      <td className="px-2 py-[5px] text-right font-bold text-green-600">SIM</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Option 2 */}
-              <div className="col-span-2 border-r border-slate-300 flex flex-col">
-                <div className="bg-slate-100 font-bold text-slate-800 text-center py-1.5 text-[10px] border-b border-slate-300 tracking-wide">
-                  SEGUNDO LUGAR (Ranking 2)
-                </div>
-                <table className="w-full text-[11px] flex-1">
-                  <tbody>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600 border-b border-slate-200">
-                        Agente:
-                      </td>
-                      <td
-                        className="px-2 py-[5px] text-right font-bold text-slate-800 border-b border-slate-200 truncate max-w-[120px]"
-                        title={
-                          top2
-                            ? `${top2.agent_name}${top2.option_description ? ` - ${top2.option_description}` : ''}`
-                            : undefined
-                        }
-                      >
-                        {top2
-                          ? `${top2.agent_name}${top2.option_description ? ` - ${top2.option_description}` : ''}`
-                          : '-'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600 border-b border-slate-200">
-                        Total Geral:
-                      </td>
-                      <td className="px-2 py-[5px] text-right font-bold text-slate-800 border-b border-slate-200">
-                        USD {top2 ? top2Cost.toFixed(2) : '-'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600 border-b border-slate-200">
-                        Transit Time:
-                      </td>
-                      <td className="px-2 py-[5px] text-right font-medium text-slate-800 border-b border-slate-200">
-                        {top2?.transit_time ? `${top2.transit_time} dias` : '-'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600 border-b border-slate-200">
-                        Score Operacional:
-                      </td>
-                      <td
-                        className={cn(
-                          'px-2 py-[5px] text-right font-bold border-b border-slate-200',
-                          top2 ? getScoreColor(getScore(top2)) : '',
-                        )}
-                      >
-                        {top2 ? getScore(top2).toFixed(2) : '-'}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-[5px] font-semibold text-slate-600">Elegível:</td>
-                      <td className="px-2 py-[5px] text-right font-bold text-green-600">SIM</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Diff */}
-              <div className="col-span-1 bg-slate-50 flex flex-col justify-center items-center p-2 text-center">
-                <span className="text-[10px] font-bold text-slate-500 uppercase leading-tight mb-2 tracking-wide">
-                  Comparativo
-                  <br />
-                  Financeiro
-                </span>
-                <div className="w-full h-[1px] bg-slate-200 mb-2"></div>
-                <div className="text-[10px] font-semibold text-slate-600 mb-0.5 uppercase">
-                  Diferença:
-                </div>
-                <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap">
-                  USD {diffAbs.toFixed(2)}
-                </div>
-                <div className="text-[12px] font-black text-orange-600 mt-1.5 bg-orange-100 px-1.5 py-0.5 rounded-sm">
-                  +{diffPct.toFixed(1)}%
-                </div>
-              </div>
+              ))}
             </div>
           </div>
-
-          {/* Ranking List (Col 8-12) */}
-          <div className="lg:col-span-5 print:col-span-5 h-full flex flex-col">
-            <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
-              RANKING FINAL (Elegíveis)
-            </div>
-            <div className="border border-t-0 border-slate-300 bg-white flex-1">
-              <table className="w-full text-[11px] text-center h-full">
-                <thead>
-                  <tr className="bg-slate-100 text-slate-700 border-b border-slate-300">
-                    <th className="py-1.5 px-1 border-r border-slate-300 w-10 font-bold">RANK</th>
-                    <th className="py-1.5 px-2 border-r border-slate-300 text-left font-bold">
-                      AGENTE
-                    </th>
-                    <th className="py-1.5 px-2 border-r border-slate-300 font-bold">TOTAL (USD)</th>
-                    <th className="py-1.5 px-2 font-bold">SCORE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedQuots.slice(0, 5).map((q, idx) => {
-                    const agentDisplayName = q.option_description
-                      ? `${q.agent_name} - ${q.option_description}`
-                      : q.agent_name
-                    const qTaxable =
-                      pedido.modal_desejado === 'Aéreo'
-                        ? Math.ceil(q.taxable_weight || chargeableWeight)
-                        : q.taxable_weight || chargeableWeight
-                    const qTotal = getComputedTotal(q, qTaxable)
-                    return (
-                      <tr key={q.id} className="border-b border-slate-200 last:border-0">
-                        <td className="py-1.5 px-1 border-r border-slate-200 font-black text-slate-600 bg-slate-50">
-                          {idx + 1}
-                        </td>
-                        <td
-                          className="py-1.5 px-2 border-r border-slate-200 font-bold text-slate-800 text-left truncate max-w-[150px]"
-                          title={agentDisplayName}
-                        >
-                          {agentDisplayName}
-                        </td>
-                        <td className="py-1.5 px-2 border-r border-slate-200 font-medium text-slate-700">
-                          {qTotal.toFixed(2)}
-                        </td>
-                        <td className={cn('py-1.5 px-2 font-bold', getScoreColor(getScore(q)))}>
-                          {getScore(q).toFixed(2)}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                  {sortedQuots.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="py-4 text-slate-500">
-                        Sem dados
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* AI Recommendation Box */}
         <div className="border border-slate-300 bg-slate-50 rounded-sm mt-6 print:break-inside-avoid">

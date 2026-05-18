@@ -6,6 +6,9 @@ export interface Pedido {
   destino: string
   peso_bruto?: number | null
   volume?: number | null
+  comprimento?: number | null
+  largura?: number | null
+  altura?: number | null
   quantidade_containers?: number | null
   tipo_mercadoria?: string
   modal_desejado: 'Aéreo' | 'FCL' | 'LCL'

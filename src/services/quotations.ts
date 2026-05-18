@@ -13,7 +13,15 @@ export interface Quotation {
     frete_peso?: number
     taxas_origem?: number
     formula_origem?: string
+    pickup_fee?: number
+    taxas_adicionais?: Array<{
+      tipo: 'por_embarque' | 'por_kg'
+      valor: number
+      minimo?: number
+      descricao: string
+    }>
   }
+  status?: 'em_analise' | 'aprovado' | 'rejeitado'
   option_description?: string
   transit_time?: number
   etd?: string
