@@ -35,7 +35,7 @@ import { getErrorMessage } from '@/lib/pocketbase/errors'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
-import { createPedido } from '@/services/pedidos'
+import { createPedido, getPedido, updatePedido } from '@/services/pedidos'
 import { createCotacaoRound } from '@/services/cotacao_rounds'
 import { createQuotation } from '@/services/quotations'
 import { useAuth } from '@/hooks/use-auth'
@@ -96,6 +96,54 @@ const pedidoSchema = z
 
 type PedidoFormValues = z.infer<typeof pedidoSchema>
 
+const validateIncotermCoherence = (incoterm: string, quote: any) => {
+  if (!incoterm || !quote) return null
+  const warnings: string[] = []
+  const rawStr = JSON.stringify(quote).toLowerCase()
+
+  if (incoterm === 'EXW') {
+    if (
+      rawStr.includes('freight') ||
+      rawStr.includes('frete internacional') ||
+      rawStr.includes('frete aéreo') ||
+      rawStr.includes('sea freight')
+    ) {
+      warnings.push(
+        'Aviso de Coerência: O termo EXW indica que o comprador assume os custos desde a origem. No entanto, a cotação parece incluir frete internacional.',
+      )
+    }
+  } else if (incoterm === 'FOB' || incoterm === 'FCA' || incoterm === 'FAS') {
+    if (
+      rawStr.includes('origin handling') ||
+      rawStr.includes('origin cost') ||
+      rawStr.includes('taxa de origem')
+    ) {
+      warnings.push(
+        `Aviso de Coerência: Em ${incoterm}, os custos na origem geralmente são do vendedor. Verifique se o comprador está sendo cobrado indevidamente por despesas de origem.`,
+      )
+    }
+  } else if (incoterm === 'DDP') {
+    if (
+      !rawStr.includes('tax') &&
+      !rawStr.includes('imposto') &&
+      !rawStr.includes('duty') &&
+      !rawStr.includes('duties')
+    ) {
+      warnings.push(
+        'Aviso de Coerência: Em DDP, o vendedor é responsável pelos impostos (duties/taxes) no destino. Parece que não estão declarados na cotação.',
+      )
+    }
+  } else if (incoterm === 'DAP' || incoterm === 'DPU') {
+    if (rawStr.includes('tax') || rawStr.includes('imposto') || rawStr.includes('duty')) {
+      warnings.push(
+        `Aviso de Coerência: Em ${incoterm}, o comprador é responsável pelos impostos no destino. A cotação parece incluí-los indevidamente.`,
+      )
+    }
+  }
+
+  return warnings.length > 0 ? warnings : null
+}
+
 export default function Upload() {
   const location = useLocation()
   const initialPedidoId = location.state?.pedidoId
@@ -104,15 +152,33 @@ export default function Upload() {
   const [pedidoId, setPedidoId] = useState<string | null>(initialPedidoId || null)
 
   const [isDragging, setIsDragging] = useState(false)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'form' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'form' | 'error' | 'review-quotes'>(
+    'idle',
+  )
   const [errorMessage, setErrorMessage] = useState<string>('')
 
   const [cota1Quotes, setCota1Quotes] = useState<any[]>([])
+
+  const [autoDetectedIncoterm, setAutoDetectedIncoterm] = useState(false)
+  const [reviewQuotes, setReviewQuotes] = useState<any[] | null>(null)
+  const [reviewIncoterm, setReviewIncoterm] = useState<string>('')
+  const [reviewIncotermDetected, setReviewIncotermDetected] = useState(false)
+  const [pedidoIncoterm, setPedidoIncoterm] = useState<string>('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
+
+  useEffect(() => {
+    if (initialPedidoId) {
+      getPedido(initialPedidoId)
+        .then((p) => {
+          if (p?.incoterm) setPedidoIncoterm(p.incoterm)
+        })
+        .catch(console.error)
+    }
+  }, [initialPedidoId])
 
   const form = useForm<PedidoFormValues>({
     resolver: zodResolver(pedidoSchema),
@@ -244,6 +310,20 @@ export default function Upload() {
       }
 
       if (wizardStep === 1) {
+        const hasExtractedIncoterm = [
+          'EXW',
+          'FCA',
+          'CPT',
+          'CIP',
+          'DAP',
+          'DPU',
+          'DDP',
+          'FAS',
+          'FOB',
+          'CFR',
+          'CIF',
+        ].includes(extracted?.incoterm)
+
         form.reset({
           origem: extracted?.origem || '',
           destino: extracted?.destino || '',
@@ -256,28 +336,15 @@ export default function Upload() {
           modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted?.modal_desejado)
             ? extracted.modal_desejado
             : 'Aéreo',
-          incoterm: [
-            'EXW',
-            'FCA',
-            'CPT',
-            'CIP',
-            'DAP',
-            'DPU',
-            'DDP',
-            'FAS',
-            'FOB',
-            'CFR',
-            'CIF',
-          ].includes(extracted?.incoterm)
-            ? extracted.incoterm
-            : undefined,
+          incoterm: hasExtractedIncoterm ? extracted.incoterm : undefined,
           prazo_desejado_dias: extracted?.prazo_desejado_dias
             ? Number(extracted.prazo_desejado_dias)
             : null,
         })
+        setAutoDetectedIncoterm(hasExtractedIncoterm)
         setStatus('form')
         toast({ title: 'Dados extraídos', description: 'Revise os dados do pedido abaixo.' })
-      } else if (wizardStep === 2) {
+      } else if (wizardStep === 2 || wizardStep === 3) {
         let quotes = []
         if (extracted?.type === 'multiple' && Array.isArray(extracted?.quotations)) {
           quotes = extracted.quotations
@@ -293,126 +360,42 @@ export default function Upload() {
 
         if (!pedidoId) throw new Error('Pedido ID ausente. Volte à etapa 1.')
 
-        if (quotes.length === 0) {
+        if (quotes.length === 0 || !quotes[0]) {
           throw new Error('Nenhuma cotação foi encontrada no documento.')
         }
 
-        const round = await createCotacaoRound({
-          pedido_id: pedidoId,
-          nome_round: 'cota1',
-          user_id: user.id,
-        })
-
-        const createdQuotes = []
+        let extractedIncoterm = undefined
+        const validIncoterms = [
+          'EXW',
+          'FCA',
+          'CPT',
+          'CIP',
+          'DAP',
+          'DPU',
+          'DDP',
+          'FAS',
+          'FOB',
+          'CFR',
+          'CIF',
+        ]
         for (const q of quotes) {
-          const modal = ['Aéreo', 'FCL', 'LCL'].includes(q?.modal)
-            ? (q.modal as 'Aéreo' | 'FCL' | 'LCL')
-            : 'Aéreo'
-          const mappedQ = {
-            agent_name: q?.agent_name || 'Desconhecido',
-            modal,
-            cost: Number(q?.cost) || 0,
-            transit_time: q?.transit_time ? Number(q.transit_time) : undefined,
-            free_time: q?.free_time ? Number(q.free_time) : undefined,
-            taxable_weight: q?.taxable_weight ? Number(q.taxable_weight) : undefined,
-            etd: q?.etd || undefined,
-            cotacao_round_id: round.id,
-            pedido_id: pedidoId,
-            user_id: user.id,
-          }
-
-          if (mappedQ.etd) {
-            const d = new Date(mappedQ.etd)
-            if (!isNaN(d.getTime())) {
-              mappedQ.etd = d.toISOString()
-            } else {
-              mappedQ.etd = undefined
-            }
-          }
-
-          const createdQ = await createQuotation(mappedQ)
-          createdQuotes.push(createdQ)
-
-          try {
-            await pb.collection('extracted_data').create({
-              quotation_id: createdQ.id,
-              raw_data: q || {},
-            })
-          } catch (err: any) {
-            console.error('Failed to save extracted data:', err)
-            if (err?.status === 401) throw err
+          if (validIncoterms.includes(q?.incoterm)) {
+            extractedIncoterm = q.incoterm
+            break
           }
         }
-
-        setCota1Quotes(createdQuotes)
-        setStatus('idle')
-        setWizardStep(3)
-        toast({ title: 'Cotações Extraídas', description: 'Rodada 1 concluída. Envie a Rodada 2.' })
-      } else if (wizardStep === 3) {
-        let q =
-          extracted?.type === 'single' && extracted?.data
-            ? extracted.data
-            : Array.isArray(extracted?.quotations) && extracted.quotations.length > 0
-              ? extracted.quotations[0]
-              : Array.isArray(extracted?.quotes) && extracted.quotes.length > 0
-                ? extracted.quotes[0]
-                : extracted
-
-        if (!pedidoId) throw new Error('Pedido ID ausente. Volte à etapa 1.')
-
-        if (!q || Array.isArray(q)) {
-          q = Array.isArray(q) && q.length > 0 ? q[0] : null
+        if (!extractedIncoterm && validIncoterms.includes(extracted?.incoterm)) {
+          extractedIncoterm = extracted.incoterm
         }
 
-        if (!q) {
-          throw new Error('Nenhuma cotação foi encontrada no documento.')
-        }
-
-        const round = await createCotacaoRound({
-          pedido_id: pedidoId,
-          nome_round: 'cota2',
-          user_id: user.id,
+        setReviewQuotes(quotes)
+        setReviewIncoterm(extractedIncoterm || pedidoIncoterm || 'FOB')
+        setReviewIncotermDetected(!!extractedIncoterm)
+        setStatus('review-quotes')
+        toast({
+          title: 'Cotações Extraídas',
+          description: 'Revise os dados e a coerência do Incoterm.',
         })
-
-        const modal = ['Aéreo', 'FCL', 'LCL'].includes(q?.modal)
-          ? (q.modal as 'Aéreo' | 'FCL' | 'LCL')
-          : 'Aéreo'
-        const mappedQ = {
-          agent_name: q?.agent_name || 'Desconhecido',
-          modal,
-          cost: Number(q?.cost) || 0,
-          transit_time: q?.transit_time ? Number(q.transit_time) : undefined,
-          free_time: q?.free_time ? Number(q.free_time) : undefined,
-          taxable_weight: q?.taxable_weight ? Number(q.taxable_weight) : undefined,
-          etd: q?.etd || undefined,
-          cotacao_round_id: round.id,
-          pedido_id: pedidoId,
-          user_id: user.id,
-        }
-
-        if (mappedQ.etd) {
-          const d = new Date(mappedQ.etd)
-          if (!isNaN(d.getTime())) {
-            mappedQ.etd = d.toISOString()
-          } else {
-            mappedQ.etd = undefined
-          }
-        }
-
-        const cota2Quote = await createQuotation(mappedQ)
-
-        try {
-          await pb.collection('extracted_data').create({
-            quotation_id: cota2Quote.id,
-            raw_data: q || {},
-          })
-        } catch (err: any) {
-          console.error('Failed to save extracted data:', err)
-          if (err?.status === 401) throw err
-        }
-
-        toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
-        navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote } })
       }
     } catch (err: any) {
       console.error('Extraction error:', err)
@@ -466,6 +449,78 @@ export default function Upload() {
     }
   }
 
+  const confirmReviewQuotes = async () => {
+    try {
+      setStatus('loading')
+
+      if (!pedidoId) throw new Error('Pedido ID ausente.')
+
+      if (reviewIncoterm !== pedidoIncoterm) {
+        await updatePedido(pedidoId, { incoterm: reviewIncoterm })
+        setPedidoIncoterm(reviewIncoterm)
+      }
+
+      const roundName = wizardStep === 2 ? 'cota1' : 'cota2'
+      const round = await createCotacaoRound({
+        pedido_id: pedidoId,
+        nome_round: roundName,
+        user_id: user!.id,
+      })
+
+      const createdQuotes = []
+      for (const q of reviewQuotes || []) {
+        const modal = ['Aéreo', 'FCL', 'LCL'].includes(q?.modal) ? q.modal : 'Aéreo'
+        const mappedQ = {
+          agent_name: q?.agent_name || 'Desconhecido',
+          modal,
+          cost: Number(q?.cost) || 0,
+          transit_time: q?.transit_time ? Number(q.transit_time) : undefined,
+          free_time: q?.free_time ? Number(q.free_time) : undefined,
+          taxable_weight: q?.taxable_weight ? Number(q.taxable_weight) : undefined,
+          etd: q?.etd || undefined,
+          cotacao_round_id: round.id,
+          pedido_id: pedidoId,
+          user_id: user!.id,
+        }
+
+        if (mappedQ.etd) {
+          const d = new Date(mappedQ.etd)
+          if (!isNaN(d.getTime())) {
+            mappedQ.etd = d.toISOString()
+          } else {
+            mappedQ.etd = undefined
+          }
+        }
+
+        const createdQ = await createQuotation(mappedQ)
+        createdQuotes.push(createdQ)
+
+        try {
+          await pb.collection('extracted_data').create({
+            quotation_id: createdQ.id,
+            raw_data: q || {},
+          })
+        } catch (err: any) {
+          console.error('Failed to save extracted data:', err)
+        }
+      }
+
+      if (wizardStep === 2) {
+        setCota1Quotes(createdQuotes)
+        setStatus('idle')
+        setWizardStep(3)
+        toast({ title: 'Cotações Salvas', description: 'Rodada 1 concluída. Envie a Rodada 2.' })
+      } else {
+        toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
+        navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote: createdQuotes[0] } })
+      }
+    } catch (err: any) {
+      console.error(err)
+      setStatus('error')
+      setErrorMessage('Falha ao salvar as cotações revisadas.')
+    }
+  }
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
@@ -512,6 +567,7 @@ export default function Upload() {
       }
       const pedido = await createPedido(pedidoPayload)
       setPedidoId(pedido.id)
+      setPedidoIncoterm(data.incoterm)
       setWizardStep(2)
       setStatus('idle')
       toast({
@@ -588,6 +644,118 @@ export default function Upload() {
               </div>
             </div>
           </Card>
+        </div>
+      )
+    }
+
+    if (status === 'review-quotes') {
+      return (
+        <div className="mt-12 max-w-3xl mx-auto animate-fade-in-up space-y-6">
+          <div className="mb-6">
+            <h3 className="text-xl font-semibold text-slate-800">Revisar Cotações e Coerência</h3>
+            <p className="text-slate-500 text-sm">
+              Verifique as cotações extraídas e a coerência com o Incoterm selecionado antes de
+              salvar.
+            </p>
+          </div>
+
+          <Card className="p-5 border-slate-200 bg-slate-50 space-y-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                Incoterm do Pedido
+                {reviewIncotermDetected && (
+                  <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center border border-green-200">
+                    Detectado na Cotação
+                  </span>
+                )}
+              </label>
+              <Select
+                value={reviewIncoterm}
+                onValueChange={(val) => {
+                  setReviewIncoterm(val)
+                  setReviewIncotermDetected(false)
+                }}
+              >
+                <SelectTrigger
+                  className={`bg-white ${reviewIncotermDetected ? 'border-green-400 ring-1 ring-green-200' : ''}`}
+                >
+                  <SelectValue placeholder="Selecione o Incoterm" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[
+                    'EXW',
+                    'FCA',
+                    'CPT',
+                    'CIP',
+                    'DAP',
+                    'DPU',
+                    'DDP',
+                    'FAS',
+                    'FOB',
+                    'CFR',
+                    'CIF',
+                  ].map((inc) => (
+                    <SelectItem key={inc} value={inc}>
+                      {inc}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-slate-500">
+                A alteração do Incoterm recalculará os avisos de coerência abaixo e atualizará o
+                pedido.
+              </p>
+            </div>
+          </Card>
+
+          <div className="space-y-4">
+            {reviewQuotes?.map((q, idx) => {
+              const warnings = validateIncotermCoherence(reviewIncoterm, q)
+              return (
+                <Card key={idx} className="p-5 border-slate-200 bg-white shadow-sm">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h4 className="font-semibold text-slate-800">
+                        {q.agent_name || 'Agente Desconhecido'}
+                      </h4>
+                      <p className="text-sm text-slate-500">Modal: {q.modal || 'Aéreo'}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-lg font-bold text-slate-800">
+                        {new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                        }).format(Number(q.cost) || 0)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {warnings && warnings.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      {warnings.map((w, wIdx) => (
+                        <div
+                          key={wIdx}
+                          className="bg-amber-50 border border-amber-200 rounded-md p-3 flex gap-2.5 text-amber-800 text-sm"
+                        >
+                          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
+                          <p className="leading-snug">{w}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              )
+            })}
+          </div>
+
+          <div className="flex justify-end pt-4 gap-3">
+            <Button variant="outline" onClick={() => setStatus('idle')} className="text-slate-600">
+              Cancelar
+            </Button>
+            <Button onClick={confirmReviewQuotes} className="bg-primary hover:bg-primary/90">
+              Confirmar e Salvar <ChevronRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )
     }
@@ -718,12 +886,27 @@ export default function Upload() {
                   name="incoterm"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>
+                      <FormLabel className="flex items-center gap-2">
                         INCOTERM <span className="text-red-500">*</span>
+                        {autoDetectedIncoterm && (
+                          <span className="bg-green-100 text-green-700 text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 border border-green-200">
+                            Detectado por IA
+                          </span>
+                        )}
                       </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select
+                        onValueChange={(val) => {
+                          field.onChange(val)
+                          setAutoDetectedIncoterm(false)
+                        }}
+                        value={field.value}
+                      >
                         <FormControl>
-                          <SelectTrigger>
+                          <SelectTrigger
+                            className={
+                              autoDetectedIncoterm ? 'border-green-400 ring-1 ring-green-200' : ''
+                            }
+                          >
                             <SelectValue placeholder="Selecione o Incoterm" />
                           </SelectTrigger>
                         </FormControl>
