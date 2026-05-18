@@ -1,56 +1,51 @@
 import { Pedido } from '@/services/pedidos'
 import { Quotation } from '@/services/quotations'
 
-export function calculateExw(
+export function calculateExwDynamic(
   formula: string | undefined,
   taxableWeight: number,
   fallbackValue: number,
+  defaultRate: number,
+  defaultFixed: number,
+  defaultMin: number,
 ): { total: number; log: string } {
-  if (!formula)
-    return {
-      total: fallbackValue,
-      log: fallbackValue > 0 ? `Taxa Fixa: USD ${fallbackValue.toFixed(2)}` : '',
-    }
-  const upper = formula.toUpperCase()
-
-  let rate = 0
-  let fixed = 0
-  let min = 0
+  let rate = defaultRate
+  let fixed = defaultFixed
+  let min = defaultMin
   let hasMatch = false
 
-  const rateMatch = upper.match(/([\d.]+)\s*\/\s*(?:K|KG)/)
-  if (rateMatch) {
-    rate = parseFloat(rateMatch[1])
-    hasMatch = true
-  }
+  if (formula) {
+    const upper = formula.toUpperCase()
 
-  const fixedMatch = upper.match(/\+\s*(?:USD)?\s*([\d.]+)/)
-  if (fixedMatch) {
-    fixed = parseFloat(fixedMatch[1])
-    hasMatch = true
-  }
-
-  const minMatch = upper.match(/MIN\s*(?:USD)?\s*([\d.]+)/)
-  if (minMatch) {
-    min = parseFloat(minMatch[1])
-    hasMatch = true
-  }
-
-  if (!hasMatch) {
-    const flatMatch = upper.match(/(?:USD)?\s*([\d.]+)\s*(?:PER JOB|PER SET|\/JOB|\/SET)/)
-    if (flatMatch) {
-      const val = parseFloat(flatMatch[1])
-      return { total: val, log: `Taxa Fixa por Embarque: USD ${val.toFixed(2)}` }
+    const rateMatch = upper.match(/([\d.]+)\s*\/\s*(?:K|KG)/)
+    if (rateMatch) {
+      rate = parseFloat(rateMatch[1])
+      hasMatch = true
     }
 
-    const cleanStr = upper.replace(/[^\d.,]/g, '').replace(',', '.')
-    const num = parseFloat(cleanStr)
-    if (!isNaN(num) && num > 0 && cleanStr.length > 0)
-      return { total: Math.max(num, min), log: `Taxa Fixa: USD ${Math.max(num, min).toFixed(2)}` }
+    const fixedMatch = upper.match(/\+\s*(?:USD)?\s*([\d.]+)/)
+    if (fixedMatch) {
+      fixed = parseFloat(fixedMatch[1])
+      hasMatch = true
+    }
 
-    return {
-      total: Math.max(fallbackValue, min),
-      log: fallbackValue > 0 ? `Taxa Fixa: USD ${Math.max(fallbackValue, min).toFixed(2)}` : '',
+    const minMatch = upper.match(/MIN\s*(?:USD)?\s*([\d.]+)/)
+    if (minMatch) {
+      min = parseFloat(minMatch[1])
+      hasMatch = true
+    }
+
+    if (!hasMatch) {
+      const flatMatch = upper.match(/(?:USD)?\s*([\d.]+)\s*(?:PER JOB|PER SET|\/JOB|\/SET)/)
+      if (flatMatch) {
+        const val = parseFloat(flatMatch[1])
+        return { total: val, log: `Taxa Fixa por Embarque: USD ${val.toFixed(2)}` }
+      }
+
+      const cleanStr = upper.replace(/[^\d.,]/g, '').replace(',', '.')
+      const num = parseFloat(cleanStr)
+      if (!isNaN(num) && num > 0 && cleanStr.length > 0)
+        return { total: Math.max(num, min), log: `Taxa Fixa: USD ${Math.max(num, min).toFixed(2)}` }
     }
   }
 
@@ -59,14 +54,22 @@ export function calculateExw(
   if (calculated === min && min > 0) {
     return {
       total: min,
-      log: `EXW charge: mínimo USD ${min.toFixed(2)} (cálculo: ${taxableWeight.toFixed(2)} * ${rate.toFixed(2)} + ${fixed.toFixed(2)} = ${(taxableWeight * rate + fixed).toFixed(2)})`,
+      log: `mínimo USD ${min.toFixed(2)} (cálculo: USD ${taxableWeight.toFixed(2)} * ${rate.toFixed(2)} + ${fixed.toFixed(2)} = ${(taxableWeight * rate + fixed).toFixed(2)})`,
     }
   } else {
     return {
       total: calculated,
-      log: `EXW charge: USD ${taxableWeight.toFixed(2)} * ${rate.toFixed(2)} + ${fixed.toFixed(2)} = ${calculated.toFixed(2)}`,
+      log: `USD ${taxableWeight.toFixed(2)} * ${rate.toFixed(2)} + ${fixed.toFixed(2)} = ${calculated.toFixed(2)}`,
     }
   }
+}
+
+export function calculateExw(
+  formula: string | undefined,
+  taxableWeight: number,
+  fallbackValue: number,
+): { total: number; log: string } {
+  return calculateExwDynamic(formula, taxableWeight, fallbackValue, 0.15, 110.5, 150.5)
 }
 
 export function calculateChargeableWeight(pedido: Pedido): number {
@@ -102,42 +105,53 @@ export function calculateChargeableWeight(pedido: Pedido): number {
 function calculateCompatibility(q: Quotation, pedido: Pedido): number {
   let score = 0
 
+  // Incoterm (0.4 max)
   const providesExw =
     q.cost_breakdown?.formula_origem ||
     q.cost_breakdown?.taxas_origem ||
     q.cost_breakdown?.origin_taxes
   if (pedido.incoterm === 'EXW') {
-    score += providesExw ? 0.4 : 0.0
+    score += providesExw ? 0.4 : 0.2
   } else {
     score += 0.4
   }
 
+  // Airport proximity (0.4 max)
   const origin = (pedido.origem || '').toUpperCase()
+  const qAeroporto = q.aeroporto_origem || (q.cost_breakdown as any)?.aeroporto || ''
   const qAgentDesc = (
     (q.option_description || '') +
     ' ' +
     (q.agent_name || '') +
     ' ' +
-    (q.aeroporto_origem || '')
+    qAeroporto
   ).toUpperCase()
 
-  let proximityScore = 0.2
+  let proximityScore = 0.1
   if (origin.includes('DALIAN')) {
     if (qAgentDesc.includes('PEK') || qAgentDesc.includes('DLC') || qAgentDesc.includes('BEIJING'))
-      proximityScore = 0.6
+      proximityScore = 0.4
   } else if (origin.includes('SHANGHAI')) {
-    if (qAgentDesc.includes('PVG') || qAgentDesc.includes('SHA')) proximityScore = 0.6
+    if (qAgentDesc.includes('PVG') || qAgentDesc.includes('SHA')) proximityScore = 0.4
   } else if (origin.includes('GUANGZHOU')) {
     if (qAgentDesc.includes('CAN') || qAgentDesc.includes('SZX') || qAgentDesc.includes('SHENZHEN'))
-      proximityScore = 0.6
+      proximityScore = 0.4
   } else if (origin.includes('XIAMEN')) {
-    if (qAgentDesc.includes('XMN')) proximityScore = 0.6
+    if (qAgentDesc.includes('XMN')) proximityScore = 0.4
   } else if (origin.includes('EZHOU')) {
-    if (qAgentDesc.includes('EHU')) proximityScore = 0.6
+    if (qAgentDesc.includes('EHU')) proximityScore = 0.4
   } else {
-    proximityScore = 0.4
+    proximityScore = 0.3
   }
   score += proximityScore
+
+  // Flight frequency (0.2 max)
+  let freqScore = 0.1
+  if (q.frequencia === 'daily') freqScore = 0.2
+  else if (q.frequencia === '3x_semana') freqScore = 0.15
+  else if (q.frequencia === '1x_semana') freqScore = 0.1
+  else if (q.frequencia === 'sob_consulta') freqScore = 0.05
+  score += freqScore
 
   return Math.min(score, 1)
 }
@@ -156,6 +170,7 @@ export type EnrichedQuotation = Quotation & {
   calculatedScore: number
   costScore: number
   transitScore: number
+  justificativaEngine: string
 }
 
 export function rankQuotations(quotations: Quotation[], pedido: Pedido): EnrichedQuotation[] {
@@ -169,19 +184,37 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
         ? Math.ceil(q.taxable_weight || chargeableWeight)
         : q.taxable_weight || chargeableWeight
 
-    let freteUnitario = q.cost_breakdown?.frete_unitario || 0
+    let freteUnitario = q.cost_breakdown?.frete_unitario || q.rate_unitario || 0
+    if (freteUnitario === 0 && q.cost > 0 && qTaxable > 0) {
+      freteUnitario = q.cost / qTaxable
+    }
+
     let freteTotal =
-      q.cost_breakdown?.frete_peso || (freteUnitario > 0 ? freteUnitario * qTaxable : 0)
+      q.cost_breakdown?.frete_peso || (freteUnitario > 0 ? freteUnitario * qTaxable : q.cost)
+
+    const isEXW = pedido.incoterm === 'EXW'
 
     let taxasOrigem = q.cost_breakdown?.taxas_origem || q.cost_breakdown?.origin_taxes || 0
     let exwLog = ''
-    if (q.cost_breakdown?.formula_origem) {
-      const exwRes = calculateExw(q.cost_breakdown.formula_origem, qTaxable, taxasOrigem)
+
+    if (q.cost_breakdown?.formula_origem || isEXW) {
+      const cb = q.cost_breakdown as any
+      const taxaKg = cb?.taxa_kg !== undefined ? Number(cb.taxa_kg) : 0.15
+      const taxaFixa = cb?.taxa_fixa !== undefined ? Number(cb.taxa_fixa) : 110.5
+      const minimo = cb?.minimo !== undefined ? Number(cb.minimo) : 150.5
+
+      const exwRes = calculateExwDynamic(
+        q.cost_breakdown?.formula_origem,
+        qTaxable,
+        taxasOrigem,
+        taxaKg,
+        taxaFixa,
+        minimo,
+      )
       taxasOrigem = exwRes.total
       exwLog = exwRes.log
     }
 
-    const isEXW = pedido.incoterm === 'EXW'
     const appliedTaxasOrigem = isEXW ? taxasOrigem : taxasOrigem || 0
 
     let pickupFee = q.cost_breakdown?.pickup_fee || 0
@@ -225,6 +258,7 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
       exwLog,
       addTaxesLog,
       freteTotal,
+      freteUnitario,
       appliedTaxasOrigem,
       pickupFee,
       additionalTaxes,
@@ -233,7 +267,9 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
       calculatedScore: 0,
       costScore: 0,
       transitScore: 0,
-    }
+      justificativaEngine: '',
+      isEXW,
+    } as EnrichedQuotation & { freteUnitario: number; isEXW: boolean }
   })
 
   const validForMinCost = enriched.filter((q) => q.computedTotal > 0)
@@ -254,11 +290,30 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
       const compatScorePoints = q.compatScore * 20
       const finalScore = costScore + transitScore + compatScorePoints
 
+      let justificativa = `Score Total: ${finalScore.toFixed(1)}/100 (Custo: ${costScore.toFixed(1)}/50, Transit Time: ${transitScore.toFixed(1)}/30, Compatibilidade: ${compatScorePoints.toFixed(1)}/20).\n`
+      justificativa += `Detalhamento de Custos (USD ${q.computedTotal.toFixed(2)}):\n`
+      justificativa += `- Frete Base: USD ${q.freteTotal.toFixed(2)} (${q.qTaxable.toFixed(2)} kg * USD ${(q as any).freteUnitario.toFixed(2)})\n`
+      if ((q as any).isEXW) {
+        justificativa += `- EXW/Origem: USD ${q.appliedTaxasOrigem.toFixed(2)} (${q.exwLog})\n`
+      } else if (q.appliedTaxasOrigem > 0) {
+        justificativa += `- Taxas Origem: USD ${q.appliedTaxasOrigem.toFixed(2)}\n`
+      }
+      if (q.pickupFee > 0) {
+        justificativa += `- Pickup Fee: USD ${q.pickupFee.toFixed(2)}\n`
+      }
+      if (q.addTaxesLog.length > 0) {
+        justificativa += `- Adicionais: ${q.addTaxesLog.join(', ')}\n`
+      }
+      if (q.destinationTaxes > 0) {
+        justificativa += `- Destino: USD ${q.destinationTaxes.toFixed(2)}\n`
+      }
+
       return {
         ...q,
         calculatedScore: finalScore,
         costScore,
         transitScore,
+        justificativaEngine: justificativa,
       }
     })
     .sort((a, b) => b.calculatedScore - a.calculatedScore)

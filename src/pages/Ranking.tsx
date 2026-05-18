@@ -458,7 +458,7 @@ export default function Ranking() {
                       {q.computedTotal.toFixed(2)}
                     </Td>
                     <Td>{q.transit_time ? `${q.transit_time} dias` : '-'}</Td>
-                    <Td>Semanal</Td>
+                    <Td className="capitalize">{q.frequencia?.replace('_', ' ') || '-'}</Td>
                     <Td>{q.etd ? new Date(q.etd).toLocaleDateString('pt-BR') : '-'}</Td>
                     <Td
                       className={cn(
@@ -549,18 +549,10 @@ export default function Ranking() {
 
                   <div className="mt-4 pt-3 border-t border-slate-200 print:border-slate-300">
                     <h5 className="text-[10px] font-bold text-slate-500 uppercase mb-1">
-                      Justificativa de Ranking
+                      Justificativa Técnica (Motor de Ranking)
                     </h5>
-                    <div className="flex gap-2 text-[10px] text-slate-600">
-                      <span className="bg-slate-100 px-1.5 py-0.5 rounded">
-                        Custo: {q.costScore.toFixed(1)}/50
-                      </span>
-                      <span className="bg-slate-100 px-1.5 py-0.5 rounded">
-                        Transit: {q.transitScore.toFixed(1)}/30
-                      </span>
-                      <span className="bg-slate-100 px-1.5 py-0.5 rounded">
-                        Compat: {(q.compatScore * 20).toFixed(1)}/20
-                      </span>
+                    <div className="mt-1 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed bg-white p-2 border border-slate-100 rounded print:border-slate-300">
+                      {q.justificativaEngine}
                     </div>
                   </div>
                 </div>
