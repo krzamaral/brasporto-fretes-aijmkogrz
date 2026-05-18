@@ -35,6 +35,8 @@ const quoteSchema = z
     agent_name: z.string().min(1, 'Obrigatório'),
     modal: z.enum(['Aéreo', 'FCL', 'LCL']),
     cost: z.number({ invalid_type_error: 'Obrigatório' }).min(0.01, 'Inválido'),
+    unit_rate: z.number().nullable().optional(),
+    additional_fees: z.number().nullable().optional(),
     taxable_weight: z.number().nullable().optional(),
     free_time: z.number().nullable().optional(),
     transit_time: z.number().nullable().optional(),
@@ -78,6 +80,35 @@ export default function Review() {
   })
 
   const { fields } = useFieldArray({ control: form.control, name: 'quotes' })
+
+  useEffect(() => {
+    const subscription = form.watch((value, { name, type }) => {
+      if (name && name.startsWith('quotes.')) {
+        const parts = name.split('.')
+        const index = parseInt(parts[1], 10)
+        const field = parts[2]
+
+        if (['unit_rate', 'additional_fees', 'taxable_weight', 'modal'].includes(field)) {
+          const quotes = form.getValues('quotes')
+          if (!quotes || !quotes[index]) return
+          const q = quotes[index]
+          if (q.modal === 'Aéreo') {
+            const rate = q.unit_rate || 0
+            const fees = q.additional_fees || 0
+            const taxable = q.taxable_weight || 0
+
+            if (rate > 0 || fees > 0) {
+              const newCost = Number((rate * taxable + fees).toFixed(2))
+              if (q.cost !== newCost) {
+                form.setValue(`quotes.${index}.cost`, newCost, { shouldValidate: true })
+              }
+            }
+          }
+        }
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [form])
 
   useRealtime('extracted_data', (e) => {
     if (e.action === 'create' || e.action === 'update') {
@@ -128,7 +159,7 @@ export default function Review() {
 
         const pedVolume = ped.volume || 0
         const pedPeso = ped.peso_bruto || 0
-        const calcVolumetric = pedVolume * 166.667
+        const calcVolumetric = pedVolume * 166.67
 
         form.reset({
           quotes: combined.map((q) => {
@@ -139,10 +170,22 @@ export default function Review() {
               taxable = Number(Math.max(pedPeso, calcVolumetric).toFixed(2))
             }
 
+            const unit_rate = q.unit_rate ? Number(q.unit_rate) : null
+            const additional_fees = q.additional_fees ? Number(q.additional_fees) : null
+
+            let totalCost = Number(q.cost) || 0
+            if (modal === 'Aéreo' && (unit_rate != null || additional_fees != null)) {
+              totalCost = Number(
+                ((unit_rate || 0) * (taxable || 0) + (additional_fees || 0)).toFixed(2),
+              )
+            }
+
             return {
               agent_name: q.agent_name || '',
               modal: modal as 'Aéreo' | 'FCL' | 'LCL',
-              cost: Number(q.cost) || (null as any),
+              unit_rate,
+              additional_fees,
+              cost: totalCost || (null as any),
               taxable_weight: taxable,
               free_time: q.free_time ? Number(q.free_time) : null,
               transit_time: q.transit_time ? Number(q.transit_time) : null,
@@ -381,6 +424,56 @@ export default function Review() {
                         </FormItem>
                       )}
                     />
+                    {modalValue === 'Aéreo' && (
+                      <>
+                        <FormField
+                          control={form.control}
+                          name={`quotes.${index}.unit_rate`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Tarifa Unitária (US$/kg)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  {...field}
+                                  value={field.value ?? ''}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      e.target.value ? parseFloat(e.target.value) : null,
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`quotes.${index}.additional_fees`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Taxas Adicionais (US$)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  {...field}
+                                  value={field.value ?? ''}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      e.target.value ? parseFloat(e.target.value) : null,
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </>
+                    )}
                     <FormField
                       control={form.control}
                       name={`quotes.${index}.cost`}
@@ -388,7 +481,7 @@ export default function Review() {
                         <FormItem>
                           <FormLabel>
                             {modalValue === 'Aéreo'
-                              ? 'Custo Total da Remessa (US$)'
+                              ? 'Custo Total do Embarque (US$)'
                               : 'Custo Total (US$)'}
                           </FormLabel>
                           <FormControl>

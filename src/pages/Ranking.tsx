@@ -105,7 +105,7 @@ export default function Ranking() {
     } else {
       text += `Apresenta transit time de ${q.transit_time != null ? q.transit_time : '-'} dias e `
     }
-    text += `custo total de US$ ${q.cost.toFixed(2)}.`
+    text += `custo total do embarque de US$ ${q.cost.toFixed(2)}.`
     return text
   }
 
@@ -176,10 +176,13 @@ export default function Ranking() {
 
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
-                    <span className="text-slate-500">
-                      {q.modal === 'Aéreo' ? 'Frete Total' : 'Custo Total'}
-                    </span>
-                    <span className="font-semibold text-slate-800">US$ {q.cost.toFixed(2)}</span>
+                    <span className="text-slate-500">Custo Total do Embarque</span>
+                    <div className="text-right">
+                      <span className="font-semibold text-slate-800">US$ {q.cost.toFixed(2)}</span>
+                      {q.modal === 'Aéreo' && (
+                        <div className="text-[10px] text-slate-400">(Frete + Taxas)</div>
+                      )}
+                    </div>
                   </div>
                   <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
                     <span className="text-slate-500">Transit Time</span>
