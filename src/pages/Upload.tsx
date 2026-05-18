@@ -8,6 +8,7 @@ import {
   RefreshCw,
   UploadCloud,
   ChevronRight,
+  CheckCircle2,
 } from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
@@ -96,6 +97,15 @@ const pedidoSchema = z
 
 type PedidoFormValues = z.infer<typeof pedidoSchema>
 
+type QuoteFile = {
+  id: string
+  name: string
+  file: File
+  status: 'pending' | 'loading' | 'success' | 'error'
+  errorMessage?: string
+  quotes?: any[]
+}
+
 const validateIncotermCoherence = (incoterm: string, quote: any) => {
   if (!incoterm || !quote) return null
   const warnings: string[] = []
@@ -157,7 +167,7 @@ export default function Upload() {
   )
   const [errorMessage, setErrorMessage] = useState<string>('')
 
-  const [cota1Quotes, setCota1Quotes] = useState<any[]>([])
+  const [quoteFiles, setQuoteFiles] = useState<QuoteFile[]>([])
 
   const [autoDetectedIncoterm, setAutoDetectedIncoterm] = useState(false)
   const [autoDetectedOrigem, setAutoDetectedOrigem] = useState(false)
@@ -170,6 +180,13 @@ export default function Upload() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const { user, signOut } = useAuth()
+
+  const isProcessingQuotes =
+    quoteFiles.length > 0 &&
+    quoteFiles.some((f) => f.status === 'loading' || f.status === 'pending')
+  const hasSuccessQuotes = quoteFiles.some(
+    (f) => f.status === 'success' && f.quotes && f.quotes.length > 0,
+  )
 
   useEffect(() => {
     if (initialPedidoId) {
@@ -196,16 +213,6 @@ export default function Upload() {
     },
   })
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }
-
   const extractTextFromPdf = async (file: File): Promise<string> => {
     try {
       const arrayBuffer = await file.arrayBuffer()
@@ -224,7 +231,7 @@ export default function Upload() {
     }
   }
 
-  const processFile = async (file: File) => {
+  const processPedidoFile = async (file: File) => {
     setErrorMessage('')
 
     if (!user || !user.id || !pb.authStore.isValid) {
@@ -237,27 +244,11 @@ export default function Upload() {
       return
     }
 
-    if (wizardStep > 1 && !pedidoId) {
-      const msg = 'Referência do pedido não encontrada. Volte à etapa 1.'
-      setErrorMessage(msg)
-      setStatus('error')
-      toast({ title: 'Erro de Fluxo', description: msg, variant: 'destructive' })
-      return
-    }
-
     if (file.type !== 'application/pdf') {
       const msg = 'Selecione um arquivo PDF válido.'
       setErrorMessage(msg)
       setStatus('error')
       toast({ title: 'Formato inválido', description: msg, variant: 'destructive' })
-      return
-    }
-
-    if (file.size === 0) {
-      const msg = 'O arquivo selecionado está vazio.'
-      setErrorMessage(msg)
-      setStatus('error')
-      toast({ title: 'Arquivo inválido', description: msg, variant: 'destructive' })
       return
     }
 
@@ -275,25 +266,16 @@ export default function Upload() {
       const extractedText = await extractTextFromPdf(file)
 
       if (!extractedText || extractedText.trim().length === 0) {
-        const msg =
-          'Nenhum texto detectado no documento. Por favor, verifique se o PDF contém texto selecionável ou tente outro arquivo.'
-        setErrorMessage(msg)
-        setStatus('error')
-        toast({ title: 'Arquivo inválido', description: msg, variant: 'destructive' })
-        return
+        throw new Error(
+          'Nenhum texto detectado no documento. Por favor, verifique se o PDF contém texto selecionável.',
+        )
       }
-
-      const docType = wizardStep === 1 ? 'pedido' : wizardStep === 2 ? 'cota1' : 'cota2'
 
       const payload: Record<string, any> = {
         text: extractedText,
-        docType,
+        docType: 'pedido',
         userId: user.id,
-        step: wizardStep,
-      }
-
-      if (pedidoId) {
-        payload.pedidoId = pedidoId
+        step: 1,
       }
 
       const res = await pb.send('/backend/v1/extract-pdf', {
@@ -310,97 +292,44 @@ export default function Upload() {
         )
       }
 
-      if (wizardStep === 1) {
-        const hasExtractedIncoterm = [
-          'EXW',
-          'FCA',
-          'CPT',
-          'CIP',
-          'DAP',
-          'DPU',
-          'DDP',
-          'FAS',
-          'FOB',
-          'CFR',
-          'CIF',
-        ].includes(extracted?.incoterm)
+      const hasExtractedIncoterm = [
+        'EXW',
+        'FCA',
+        'CPT',
+        'CIP',
+        'DAP',
+        'DPU',
+        'DDP',
+        'FAS',
+        'FOB',
+        'CFR',
+        'CIF',
+      ].includes(extracted?.incoterm)
 
-        const hasExtractedOrigem = !!extracted?.origem
+      const hasExtractedOrigem = !!extracted?.origem
 
-        form.reset({
-          origem: extracted?.origem || '',
-          destino: extracted?.destino || '',
-          peso_bruto: extracted?.peso_bruto ? Number(extracted.peso_bruto) : null,
-          volume: extracted?.volume ? Number(extracted.volume) : null,
-          quantidade_containers: extracted?.quantidade_containers
-            ? Number(extracted.quantidade_containers)
-            : null,
-          tipo_mercadoria: extracted?.tipo_mercadoria || '',
-          modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted?.modal_desejado)
-            ? extracted.modal_desejado
-            : 'Aéreo',
-          incoterm: hasExtractedIncoterm ? extracted.incoterm : undefined,
-          prazo_desejado_dias: extracted?.prazo_desejado_dias
-            ? Number(extracted.prazo_desejado_dias)
-            : null,
-        })
-        setAutoDetectedIncoterm(hasExtractedIncoterm)
-        setAutoDetectedOrigem(hasExtractedOrigem)
-        setStatus('form')
-        toast({ title: 'Dados extraídos', description: 'Revise os dados do pedido abaixo.' })
-      } else if (wizardStep === 2 || wizardStep === 3) {
-        let quotes = []
-        if (extracted?.type === 'multiple' && Array.isArray(extracted?.quotations)) {
-          quotes = extracted.quotations
-        } else if (extracted?.type === 'single' && extracted?.data) {
-          quotes = [extracted.data]
-        } else if (Array.isArray(extracted?.quotations)) {
-          quotes = extracted.quotations
-        } else if (Array.isArray(extracted?.quotes)) {
-          quotes = extracted.quotes
-        } else {
-          quotes = Array.isArray(extracted) ? extracted : [extracted]
-        }
+      form.reset({
+        origem: extracted?.origem || '',
+        destino: extracted?.destino || '',
+        peso_bruto: extracted?.peso_bruto ? Number(extracted.peso_bruto) : null,
+        volume: extracted?.volume ? Number(extracted.volume) : null,
+        quantidade_containers: extracted?.quantidade_containers
+          ? Number(extracted.quantidade_containers)
+          : null,
+        tipo_mercadoria: extracted?.tipo_mercadoria || '',
+        modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted?.modal_desejado)
+          ? extracted.modal_desejado
+          : 'Aéreo',
+        incoterm: hasExtractedIncoterm ? extracted.incoterm : undefined,
+        prazo_desejado_dias: extracted?.prazo_desejado_dias
+          ? Number(extracted.prazo_desejado_dias)
+          : null,
+      })
 
-        if (!pedidoId) throw new Error('Pedido ID ausente. Volte à etapa 1.')
-
-        if (quotes.length === 0 || !quotes[0]) {
-          throw new Error('Nenhuma cotação foi encontrada no documento.')
-        }
-
-        let extractedIncoterm = undefined
-        const validIncoterms = [
-          'EXW',
-          'FCA',
-          'CPT',
-          'CIP',
-          'DAP',
-          'DPU',
-          'DDP',
-          'FAS',
-          'FOB',
-          'CFR',
-          'CIF',
-        ]
-        for (const q of quotes) {
-          if (validIncoterms.includes(q?.incoterm)) {
-            extractedIncoterm = q.incoterm
-            break
-          }
-        }
-        if (!extractedIncoterm && validIncoterms.includes(extracted?.incoterm)) {
-          extractedIncoterm = extracted.incoterm
-        }
-
-        setReviewQuotes(quotes)
-        setReviewIncoterm(extractedIncoterm || pedidoIncoterm || 'FOB')
-        setReviewIncotermDetected(!!extractedIncoterm)
-        setStatus('review-quotes')
-        toast({
-          title: 'Cotações Extraídas',
-          description: 'Revise os dados e a coerência do Incoterm.',
-        })
-      }
+      setAutoDetectedIncoterm(hasExtractedIncoterm)
+      setAutoDetectedOrigem(hasExtractedOrigem)
+      setStatus('form')
+      toast({ title: 'Dados extraídos', description: 'Revise os dados do pedido abaixo.' })
     } catch (err: any) {
       console.error('Extraction error:', err)
       setStatus('error')
@@ -419,7 +348,9 @@ export default function Upload() {
       let errorMsg =
         'Não foi possível processar o arquivo. Verifique sua conexão e tente novamente.'
 
-      if (err?.status === 400) {
+      if (err instanceof Error) {
+        errorMsg = err.message
+      } else if (err?.status === 400) {
         const validationMsg = getErrorMessage(err)
         const isGeneric =
           validationMsg === 'An unexpected error occurred.' ||
@@ -427,30 +358,130 @@ export default function Upload() {
         errorMsg =
           !isGeneric && validationMsg
             ? validationMsg
-            : 'Os dados extraídos estão inválidos ou incompletos. Verifique o documento e tente novamente.'
+            : 'Os dados extraídos estão inválidos ou incompletos.'
       } else if (err?.status === 413) {
         errorMsg = 'O arquivo é muito grande para ser processado.'
       } else if (err?.status >= 500) {
         errorMsg = 'Erro interno do servidor. Tente novamente mais tarde.'
-      } else if (err?.isAbort) {
-        errorMsg = 'A requisição foi cancelada (tempo limite). Verifique sua conexão.'
-      } else {
-        const apiMsg = getErrorMessage(err)
-        const isGeneric =
-          apiMsg === 'An unexpected error occurred.' ||
-          apiMsg === 'Something went wrong while processing your request.'
-        if (!isGeneric && apiMsg) {
-          errorMsg = apiMsg
-        }
       }
 
       setErrorMessage(errorMsg)
+      toast({ title: 'Falha no Processamento', description: errorMsg, variant: 'destructive' })
+    }
+  }
+
+  const processQuoteFiles = async (files: File[]) => {
+    if (!user || !user.id || !pb.authStore.isValid) {
+      toast({ title: 'Erro', description: 'Sessão expirada.', variant: 'destructive' })
+      signOut()
+      navigate('/login')
+      return
+    }
+
+    if (!pedidoId) {
       toast({
-        title: 'Falha no Processamento',
-        description: errorMsg,
+        title: 'Erro',
+        description: 'Pedido não encontrado. Volte à etapa 1.',
         variant: 'destructive',
       })
+      return
     }
+
+    const newFiles: QuoteFile[] = files.map((f) => ({
+      id: Math.random().toString(),
+      name: f.name,
+      file: f,
+      status: 'pending',
+    }))
+
+    setQuoteFiles((prev) => [...prev, ...newFiles])
+
+    for (const uf of newFiles) {
+      setQuoteFiles((prev) => prev.map((p) => (p.id === uf.id ? { ...p, status: 'loading' } : p)))
+      try {
+        if (uf.file.type !== 'application/pdf') throw new Error('Apenas PDF é suportado.')
+        if (uf.file.size > 5 * 1024 * 1024) throw new Error('Tamanho máximo 5MB.')
+
+        const text = await extractTextFromPdf(uf.file)
+        if (!text || text.trim().length === 0)
+          throw new Error('Nenhum texto detectado no documento.')
+
+        const payload = { text, docType: 'cotacao', step: 2, userId: user.id, pedidoId }
+        const res = await pb.send('/backend/v1/extract-pdf', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+          headers: { 'Content-Type': 'application/json' },
+        })
+
+        const extracted = res?.data?.data || res?.data || res
+        let quotes = []
+        if (extracted?.type === 'multiple' && Array.isArray(extracted?.quotations)) {
+          quotes = extracted.quotations
+        } else if (extracted?.type === 'single' && extracted?.data) {
+          quotes = [extracted.data]
+        } else if (Array.isArray(extracted?.quotations)) {
+          quotes = extracted.quotations
+        } else if (Array.isArray(extracted?.quotes)) {
+          quotes = extracted.quotes
+        } else {
+          quotes = Array.isArray(extracted) ? extracted : [extracted]
+        }
+
+        if (!quotes || quotes.length === 0 || !quotes[0]) {
+          throw new Error('Nenhuma cotação foi encontrada neste documento.')
+        }
+
+        setQuoteFiles((prev) =>
+          prev.map((p) => (p.id === uf.id ? { ...p, status: 'success', quotes } : p)),
+        )
+      } catch (err: any) {
+        let errorMsg = 'Erro ao processar arquivo.'
+        if (err instanceof Error) errorMsg = err.message
+        else if (err?.status === 400) errorMsg = getErrorMessage(err) || errorMsg
+        setQuoteFiles((prev) =>
+          prev.map((p) => (p.id === uf.id ? { ...p, status: 'error', errorMessage: errorMsg } : p)),
+        )
+      }
+    }
+  }
+
+  const handleProceedToReview = () => {
+    const allQuotes = quoteFiles
+      .filter((f) => f.status === 'success')
+      .flatMap((f) => f.quotes || [])
+
+    if (!pedidoId) {
+      toast({ title: 'Erro', description: 'Referência do pedido perdida.', variant: 'destructive' })
+      return
+    }
+
+    let extractedIncoterm = undefined
+    const validIncoterms = [
+      'EXW',
+      'FCA',
+      'CPT',
+      'CIP',
+      'DAP',
+      'DPU',
+      'DDP',
+      'FAS',
+      'FOB',
+      'CFR',
+      'CIF',
+    ]
+    for (const q of allQuotes) {
+      if (validIncoterms.includes(q?.incoterm)) {
+        extractedIncoterm = q.incoterm
+        break
+      }
+    }
+
+    setReviewQuotes(allQuotes)
+    setReviewIncoterm(extractedIncoterm || pedidoIncoterm || 'FOB')
+    setReviewIncotermDetected(!!extractedIncoterm)
+
+    setStatus('review-quotes')
+    setWizardStep(3)
   }
 
   const confirmReviewQuotes = async () => {
@@ -464,10 +495,9 @@ export default function Upload() {
         setPedidoIncoterm(reviewIncoterm)
       }
 
-      const roundName = wizardStep === 2 ? 'cota1' : 'cota2'
       const round = await createCotacaoRound({
         pedido_id: pedidoId,
-        nome_round: roundName,
+        nome_round: 'cota1',
         user_id: user!.id,
       })
 
@@ -509,15 +539,8 @@ export default function Upload() {
         }
       }
 
-      if (wizardStep === 2) {
-        setCota1Quotes(createdQuotes)
-        setStatus('idle')
-        setWizardStep(3)
-        toast({ title: 'Cotações Salvas', description: 'Rodada 1 concluída. Envie a Rodada 2.' })
-      } else {
-        toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
-        navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote: createdQuotes[0] } })
-      }
+      toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
+      navigate('/review', { state: { pedidoId, cota1Quotes: createdQuotes, cota2Quote: null } })
     } catch (err: any) {
       console.error(err)
       setStatus('error')
@@ -528,13 +551,20 @@ export default function Upload() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setIsDragging(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file) processFile(file)
+    const files = Array.from(e.dataTransfer.files || [])
+    if (files.length > 0) {
+      if (wizardStep === 1) processPedidoFile(files[0])
+      else if (wizardStep === 2) processQuoteFiles(files)
+    }
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) processFile(file)
+    const files = Array.from(e.target.files || [])
+    if (files.length > 0) {
+      if (wizardStep === 1) processPedidoFile(files[0])
+      else if (wizardStep === 2) processQuoteFiles(files)
+    }
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const onPedidoSubmit = async (data: PedidoFormValues) => {
@@ -574,9 +604,10 @@ export default function Upload() {
       setPedidoIncoterm(data.incoterm)
       setWizardStep(2)
       setStatus('idle')
+      setQuoteFiles([])
       toast({
         title: 'Pedido criado',
-        description: 'Agora envie o documento da primeira rodada de cotação.',
+        description: 'Agora envie as cotações concorrentes.',
       })
     } catch (e: any) {
       if (e?.status === 401 || !pb.authStore.isValid) {
@@ -604,10 +635,6 @@ export default function Upload() {
     }
   }
 
-  const handleSkipCota2 = () => {
-    navigate('/review', { state: { pedidoId, cota1Quotes, cota2Quote: null } })
-  }
-
   const watchedModal = form.watch('modal_desejado')
   const watchedVolume = form.watch('volume')
   const watchedPeso = form.watch('peso_bruto')
@@ -632,8 +659,8 @@ export default function Upload() {
       return (
         <div className="mt-12 max-w-3xl mx-auto space-y-8 animate-fade-in-up">
           <div className="text-center space-y-2">
-            <h3 className="text-xl font-semibold text-slate-800">Analisando documento...</h3>
-            <p className="text-slate-500">A IA está extraindo os dados relevantes.</p>
+            <h3 className="text-xl font-semibold text-slate-800">Processando...</h3>
+            <p className="text-slate-500">Aguarde enquanto os dados são salvos.</p>
           </div>
           <Card className="p-8 space-y-8 border-slate-200">
             <div className="space-y-3">
@@ -655,7 +682,7 @@ export default function Upload() {
       )
     }
 
-    if (status === 'review-quotes') {
+    if (wizardStep === 3 || status === 'review-quotes') {
       return (
         <div className="mt-12 max-w-3xl mx-auto animate-fade-in-up space-y-6">
           <div className="mb-6">
@@ -756,8 +783,15 @@ export default function Upload() {
           </div>
 
           <div className="flex justify-end pt-4 gap-3">
-            <Button variant="outline" onClick={() => setStatus('idle')} className="text-slate-600">
-              Cancelar
+            <Button
+              variant="outline"
+              onClick={() => {
+                setStatus('idle')
+                setWizardStep(2)
+              }}
+              className="text-slate-600"
+            >
+              Voltar
             </Button>
             <Button onClick={confirmReviewQuotes} className="bg-primary hover:bg-primary/90">
               Confirmar e Salvar <ChevronRight className="ml-2 h-4 w-4" />
@@ -1119,7 +1153,7 @@ export default function Upload() {
       )
     }
 
-    if (status === 'error') {
+    if (status === 'error' && wizardStep === 1) {
       return (
         <div className="mt-12 max-w-3xl mx-auto flex flex-col items-center justify-center py-16 animate-fade-in-up">
           <div className="h-24 w-24 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6 shadow-sm">
@@ -1141,13 +1175,19 @@ export default function Upload() {
     }
 
     return (
-      <div className="mt-12 max-w-3xl mx-auto animate-fade-in-up">
+      <div className="mt-12 max-w-3xl mx-auto animate-fade-in-up flex flex-col items-center">
         <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
+          onDragOver={(e) => {
+            e.preventDefault()
+            setIsDragging(true)
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault()
+            setIsDragging(false)
+          }}
           onDrop={handleDrop}
           onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed transition-all duration-200 ease-in-out rounded-xl p-16 flex flex-col items-center justify-center text-center cursor-pointer group ${
+          className={`border-2 border-dashed w-full max-w-xl transition-all duration-200 ease-in-out rounded-xl p-16 flex flex-col items-center justify-center text-center cursor-pointer group ${
             isDragging
               ? 'border-primary bg-primary/5 scale-[1.02]'
               : 'border-slate-300 hover:border-primary hover:bg-slate-50'
@@ -1158,6 +1198,7 @@ export default function Upload() {
             ref={fileInputRef}
             onChange={handleFileSelect}
             accept="application/pdf"
+            multiple={wizardStep === 2}
             className="hidden"
           />
           <div
@@ -1174,36 +1215,89 @@ export default function Upload() {
             )}
           </div>
           <h3 className="text-xl font-semibold mb-3 text-slate-800">
-            {wizardStep === 1
-              ? 'Upload do Pedido (Load Request)'
-              : wizardStep === 2
-                ? 'Upload da Cotação 1 (Várias opções)'
-                : 'Upload da Cotação 2 (Opção única)'}
+            {wizardStep === 1 ? 'Upload do Pedido (Load Request)' : 'Upload de Cotações'}
           </h3>
           <p className="text-slate-500 mb-8 max-w-md">
-            Arraste um PDF ou clique para buscar em seu computador.
+            {wizardStep === 1
+              ? 'Arraste um PDF ou clique para buscar em seu computador.'
+              : 'Arraste os PDFs das cotações concorrentes ou clique para selecioná-los.'}
           </p>
           <Button
             type="button"
             className="bg-primary hover:bg-primary/90 text-white shadow-sm pointer-events-none px-6"
           >
-            Selecionar Arquivo PDF
+            {wizardStep === 1 ? 'Selecionar Arquivo PDF' : 'Selecionar Arquivos (PDF)'}
           </Button>
         </div>
 
-        {wizardStep === 3 && (
-          <div className="mt-6 flex justify-center">
-            <Button
-              variant="ghost"
-              onClick={handleSkipCota2}
-              className="text-slate-500 hover:text-slate-800"
-            >
-              Pular esta etapa (Não tenho segunda cotação) <ChevronRight className="ml-1 h-4 w-4" />
-            </Button>
+        {wizardStep === 2 && quoteFiles.length > 0 && (
+          <div className="mt-8 space-y-4 animate-fade-in w-full max-w-xl mx-auto">
+            <h4 className="font-semibold text-slate-800 border-b pb-2">
+              Arquivos em Processamento
+            </h4>
+            <div className="space-y-3">
+              {quoteFiles.map((qf) => (
+                <div
+                  key={qf.id}
+                  className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg shadow-sm"
+                >
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <FileText className="h-6 w-6 text-slate-400 shrink-0" />
+                    <span className="text-sm font-medium text-slate-700 truncate" title={qf.name}>
+                      {qf.name}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 ml-4">
+                    {qf.status === 'pending' && (
+                      <span className="text-xs text-slate-400">Aguardando...</span>
+                    )}
+                    {qf.status === 'loading' && (
+                      <div className="flex items-center gap-2 text-blue-600">
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span className="text-xs font-medium">Extraindo...</span>
+                      </div>
+                    )}
+                    {qf.status === 'success' && (
+                      <div className="flex items-center gap-1.5 text-green-600 bg-green-50 px-2 py-1 rounded-md border border-green-100">
+                        <CheckCircle2 className="h-4 w-4" />
+                        <span className="text-xs font-medium">
+                          {qf.quotes?.length} cotação(ões)
+                        </span>
+                      </div>
+                    )}
+                    {qf.status === 'error' && (
+                      <div className="flex flex-col items-end">
+                        <div className="flex items-center gap-1.5 text-red-600">
+                          <AlertCircle className="h-4 w-4" />
+                          <span className="text-xs font-medium">Erro</span>
+                        </div>
+                        <span
+                          className="text-[10px] text-red-500 max-w-[150px] truncate"
+                          title={qf.errorMessage}
+                        >
+                          {qf.errorMessage}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {!isProcessingQuotes && hasSuccessQuotes && (
+              <div className="pt-4 flex justify-end">
+                <Button
+                  onClick={handleProceedToReview}
+                  className="bg-primary hover:bg-primary/90 text-white shadow-sm"
+                >
+                  Revisar Cotações Extraídas <ChevronRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
-        <div className="mt-8 bg-primary/5 border border-primary/20 rounded-lg p-5 flex gap-4 text-slate-700">
+        <div className="mt-8 bg-primary/5 border border-primary/20 rounded-lg p-5 flex gap-4 text-slate-700 w-full max-w-xl mx-auto">
           <Info className="h-6 w-6 shrink-0 mt-0.5 text-primary" />
           <div className="text-sm space-y-2">
             <p className="font-semibold text-primary text-base">Instruções:</p>
@@ -1216,13 +1310,8 @@ export default function Upload() {
               )}
               {wizardStep === 2 && (
                 <li>
-                  A IA irá ler o documento e extrair todas as cotações listadas nele
-                  automaticamente.
-                </li>
-              )}
-              {wizardStep === 3 && (
-                <li>
-                  Envie a oferta concorrente ou pule esta etapa para prosseguir para a revisão.
+                  Envie um ou mais PDFs de cotação. A IA processará cada arquivo individualmente e
+                  extrairá as propostas.
                 </li>
               )}
             </ul>
