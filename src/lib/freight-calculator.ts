@@ -86,7 +86,7 @@ export function calculateChargeableWeight(pedido: Pedido): number {
         6000
     } else {
       const volume = pedido.volume || 0
-      volumeWeight = volume * 166.667
+      volumeWeight = volume / 0.006
     }
     return Math.ceil(Math.max(pesoBruto, volumeWeight))
   }
@@ -197,7 +197,7 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
 
     const qTaxable =
       pedido.modal_desejado === 'Aéreo'
-        ? Math.ceil(q.taxable_weight || chargeableWeight)
+        ? Math.max(Math.ceil(q.taxable_weight || 0), chargeableWeight)
         : q.taxable_weight || chargeableWeight
 
     let freteUnitario = q.cost_breakdown?.frete_unitario ?? q.rate_unitario ?? 0

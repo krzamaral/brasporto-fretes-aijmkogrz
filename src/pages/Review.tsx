@@ -4,6 +4,7 @@ import { ArrowLeft, Save, Loader2, Info, Calculator, AlertTriangle } from 'lucid
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -135,18 +136,23 @@ export default function Review() {
 
         const pedVolume = ped.volume || 0
         const pedPeso = ped.peso_bruto || 0
-        const calcVolumetricAir = pedVolume * 166.67
+        let calcVolumetricAir = pedVolume / 0.006
+        if (ped.comprimento && ped.largura && ped.altura) {
+          calcVolumetricAir =
+            (ped.comprimento * ped.largura * ped.altura * (ped.quantidade_containers || 1)) / 6000
+        }
         const calcVolumetricLCL = pedVolume * 1000
+        const chargeableAir = Math.ceil(Math.max(pedPeso, calcVolumetricAir))
 
         form.reset({
           quotes: combined.map((q) => {
             const modal = ['Aéreo', 'FCL', 'LCL'].includes(q.modal) ? q.modal : ped.modal_desejado
             let taxable = q.taxable_weight ? Number(q.taxable_weight) : null
 
-            if (!taxable) {
-              if (modal === 'Aéreo') {
-                taxable = Number(Math.max(pedPeso, calcVolumetricAir).toFixed(2))
-              } else if (modal === 'LCL') {
+            if (modal === 'Aéreo') {
+              taxable = Math.max(taxable || 0, chargeableAir)
+            } else if (!taxable) {
+              if (modal === 'LCL') {
                 taxable = Number(Math.max(pedPeso, calcVolumetricLCL).toFixed(2))
               }
             }
@@ -294,10 +300,10 @@ export default function Review() {
                     pedido.altura *
                     (pedido.quantidade_containers || 1)) /
                   6000
-                volumeCalcInfo = `Cálculo Volume Aéreo: (${pedido.comprimento}×${pedido.largura}×${pedido.altura}) / 6000 = ${vw.toFixed(2)}kg. Chargeable: ${Math.ceil(Math.max(pb, vw))}kg`
+                volumeCalcInfo = `Cálculo Volume Aéreo: (${pedido.comprimento}×${pedido.largura}×${pedido.altura}) / 6000 = ${vw.toFixed(2)} kg. Chargeable: ${Math.ceil(Math.max(pb, vw))} kg`
               } else {
-                vw = (pedido.volume || 0) * 166.667
-                volumeCalcInfo = `Cálculo Volume Aéreo: ${pedido.volume || 0}m³ × 166.667 = ${vw.toFixed(2)}kg. Chargeable: ${Math.ceil(Math.max(pb, vw))}kg`
+                vw = (pedido.volume || 0) / 0.006
+                volumeCalcInfo = `Cálculo Volume Aéreo: ${pedido.volume || 0} m³ / 0.006 = ${vw.toFixed(2)} kg. Chargeable: ${Math.ceil(Math.max(pb, vw))} kg`
               }
             }
 
@@ -476,7 +482,22 @@ export default function Review() {
                           name={`quotes.${index}.taxable_weight`}
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Peso Taxável</FormLabel>
+                              <FormLabel className="flex items-center gap-1">
+                                Peso Taxável
+                                {modalValue === 'Aéreo' && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Info className="h-3.5 w-3.5 text-slate-400 cursor-help" />
+                                    </TooltipTrigger>
+                                    <TooltipContent className="bg-slate-800 text-white text-xs border-none z-50">
+                                      <p>
+                                        O Peso Taxável para aéreo considera o maior valor entre o
+                                        Peso Bruto e o Volumétrico.
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </FormLabel>
                               <FormControl>
                                 <Input
                                   type="number"

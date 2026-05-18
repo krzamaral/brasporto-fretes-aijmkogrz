@@ -10,7 +10,9 @@ import {
   Trophy,
   AlertTriangle,
   CircleDollarSign,
+  Info,
 } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Button } from '@/components/ui/button'
 import { getQuotationsByPedido, analisarCotacoesIA, updateQuotation } from '@/services/quotations'
 import { getPedido, type Pedido } from '@/services/pedidos'
@@ -358,8 +360,22 @@ export default function Ranking() {
                 <tr>
                   <LabelTd>Peso Taxável (Base):</LabelTd>
                   <Td className="font-bold text-slate-800">
-                    {chargeableWeight.toFixed(2)}{' '}
-                    {pedido.modal_desejado === 'Aéreo' ? 'kg' : 'ton/cbm'}
+                    <div className="flex items-center justify-center gap-1">
+                      {chargeableWeight.toFixed(2)}{' '}
+                      {pedido.modal_desejado === 'Aéreo' ? 'kg' : 'ton/cbm'}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 text-slate-400 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="bg-slate-800 text-white text-xs border-none z-50">
+                          {pedido.modal_desejado === 'Aéreo'
+                            ? pedido.comprimento && pedido.largura && pedido.altura
+                              ? `Volumétrico: (${pedido.comprimento}×${pedido.largura}×${pedido.altura}) / 6000 = ${((pedido.comprimento * pedido.largura * pedido.altura * (pedido.quantidade_containers || 1)) / 6000).toFixed(2)} kg`
+                              : `Volumétrico: ${pedido.volume || 0} m³ / 0.006 = ${((pedido.volume || 0) / 0.006).toFixed(2)} kg`
+                            : `Peso Base: ${chargeableWeight.toFixed(2)}`}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </Td>
                 </tr>
                 <tr>
