@@ -567,7 +567,7 @@ export default function Ranking() {
                       )}
                     >
                       {q.isIncompleteData ? '0.0%' : `${q.calculatedScore.toFixed(1)}%`}
-                    </Td>{' '}
+                    </Td>
                     <Td className="print-hidden w-28 text-center p-1">
                       <select
                         className="w-full text-xs p-1 border rounded bg-white text-slate-800"
