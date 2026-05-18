@@ -7,7 +7,7 @@ import { getPedido, type Pedido } from '@/services/pedidos'
 import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { Stepper } from '@/components/Stepper'
-import { cn } from '@/lib/utils'
+import { cn, calculateExw } from '@/lib/utils'
 import { useRealtime } from '@/hooks/use-realtime'
 
 export default function Ranking() {
@@ -121,6 +121,20 @@ export default function Ranking() {
     return 'bg-[#f4b084] text-red-900'
   }
 
+  const getComputedTotal = (q: Quotation, calcTaxable: number) => {
+    const freteUnitario = q.cost_breakdown?.frete_unitario || 0
+    const freteTotal =
+      q.cost_breakdown?.frete_peso || (freteUnitario > 0 ? freteUnitario * calcTaxable : 0)
+    let taxasOrigem = q.cost_breakdown?.taxas_origem || q.cost_breakdown?.origin_taxes || 0
+    if (q.cost_breakdown?.formula_origem) {
+      taxasOrigem = calculateExw(q.cost_breakdown.formula_origem, calcTaxable, taxasOrigem)
+    }
+    const isEXW = pedido?.incoterm === 'EXW'
+    const appliedTaxasOrigem = isEXW ? taxasOrigem : taxasOrigem || 0
+    const computed = freteTotal + appliedTaxasOrigem + (q.cost_breakdown?.destination_taxes || 0)
+    return computed > 0 ? computed : q.cost
+  }
+
   if (!pedido) {
     return (
       <div className="p-8 flex justify-center min-h-screen items-center">
@@ -141,11 +155,39 @@ export default function Ranking() {
       ? Math.ceil(Math.max(pesoBruto, volumetricWeightAir))
       : Math.max(pesoBruto / 1000, volume)
 
-  const sortedQuots = [...quotations].sort((a, b) => getScore(b) - getScore(a))
+  const sortedQuots = [...quotations].sort((a, b) => {
+    const scoreDiff = getScore(b) - getScore(a)
+    if (scoreDiff !== 0) return scoreDiff
+    const aTaxable =
+      pedido.modal_desejado === 'Aéreo'
+        ? Math.ceil(a.taxable_weight || chargeableWeight)
+        : a.taxable_weight || chargeableWeight
+    const bTaxable =
+      pedido.modal_desejado === 'Aéreo'
+        ? Math.ceil(b.taxable_weight || chargeableWeight)
+        : b.taxable_weight || chargeableWeight
+    return getComputedTotal(a, aTaxable) - getComputedTotal(b, bTaxable)
+  })
+
   const top1 = sortedQuots[0]
   const top2 = sortedQuots[1]
-  const diffAbs = top2 && top1 ? top2.cost - top1.cost : 0
-  const diffPct = top2 && top1 && top1.cost > 0 ? (diffAbs / top1.cost) * 100 : 0
+
+  const top1Taxable = top1
+    ? pedido.modal_desejado === 'Aéreo'
+      ? Math.ceil(top1.taxable_weight || chargeableWeight)
+      : top1.taxable_weight || chargeableWeight
+    : 0
+  const top2Taxable = top2
+    ? pedido.modal_desejado === 'Aéreo'
+      ? Math.ceil(top2.taxable_weight || chargeableWeight)
+      : top2.taxable_weight || chargeableWeight
+    : 0
+
+  const top1Cost = top1 ? getComputedTotal(top1, top1Taxable) : 0
+  const top2Cost = top2 ? getComputedTotal(top2, top2Taxable) : 0
+
+  const diffAbs = top2 && top1 ? top2Cost - top1Cost : 0
+  const diffPct = top2 && top1 && top1Cost > 0 ? (diffAbs / top1Cost) * 100 : 0
 
   const Th = ({ children, className, colSpan, rowSpan }: any) => (
     <th
@@ -380,7 +422,11 @@ export default function Ranking() {
                   <LabelTd>Peso Taxável (Max):</LabelTd>
                   <Td className="font-bold text-slate-800">
                     {Math.max(
-                      ...quotations.map((q) => q.taxable_weight || 0),
+                      ...quotations.map((q) =>
+                        pedido.modal_desejado === 'Aéreo'
+                          ? Math.ceil(q.taxable_weight || chargeableWeight)
+                          : q.taxable_weight || chargeableWeight,
+                      ),
                       chargeableWeight,
                     ).toFixed(2)}{' '}
                     {pedido.modal_desejado === 'Aéreo' ? 'kg' : 'ton/cbm'}
@@ -553,32 +599,60 @@ export default function Ranking() {
                     ? q.transit_time <= pedido.prazo_desejado_dias
                     : true
 
+                // Agent Identification: "The UI must concatenate Agent Name + Carrier + Route"
+                // Assuming option_description holds Carrier/Route if parsed, otherwise we fallback
                 const agentDisplayName = q.option_description
                   ? `${q.agent_name} - ${q.option_description}`
                   : q.agent_name
 
-                const calcTaxable = q.taxable_weight ? q.taxable_weight : chargeableWeight
+                const baseTaxable = q.taxable_weight ? q.taxable_weight : chargeableWeight
+                const calcTaxable =
+                  pedido.modal_desejado === 'Aéreo' ? Math.ceil(baseTaxable) : baseTaxable
                 const freteUnitario = q.cost_breakdown?.frete_unitario || 0
-                const freteTotal = q.cost_breakdown?.frete_peso || freteUnitario * calcTaxable
-                const taxasOrigem =
+                const freteTotal =
+                  q.cost_breakdown?.frete_peso ||
+                  (freteUnitario > 0 ? freteUnitario * calcTaxable : 0)
+
+                let taxasOrigem =
                   q.cost_breakdown?.taxas_origem || q.cost_breakdown?.origin_taxes || 0
+                if (q.cost_breakdown?.formula_origem) {
+                  taxasOrigem = calculateExw(
+                    q.cost_breakdown.formula_origem,
+                    calcTaxable,
+                    taxasOrigem,
+                  )
+                }
+
+                const displayTotal = getComputedTotal(q, calcTaxable)
 
                 return (
                   <tr key={q.id} className="hover:bg-slate-50 transition-colors">
                     <Td
-                      className="font-bold text-left truncate max-w-[200px]"
+                      className="font-bold text-left whitespace-normal max-w-[200px]"
                       title={agentDisplayName}
                     >
                       {agentDisplayName}
                     </Td>
                     <Td>{q.modal}</Td>
-                    <Td className="font-semibold text-slate-700">{calcTaxable.toFixed(2)}</Td>
+                    <Td className="font-semibold text-blue-700 bg-blue-50/30">
+                      {calcTaxable.toFixed(2)}
+                    </Td>
                     <Td>{freteUnitario > 0 ? freteUnitario.toFixed(2) : '-'}</Td>
                     <Td>{freteTotal > 0 ? freteTotal.toFixed(2) : '-'}</Td>
-                    <Td title={q.cost_breakdown?.formula_origem}>
+                    <Td title={q.cost_breakdown?.formula_origem || 'Taxa Origem'}>
                       {taxasOrigem > 0 ? taxasOrigem.toFixed(2) : '-'}
+                      {q.cost_breakdown?.formula_origem && (
+                        <div
+                          className="text-[9px] text-slate-400 mt-0.5 max-w-[120px] truncate mx-auto"
+                          title={q.cost_breakdown.formula_origem}
+                        >
+                          ({q.cost_breakdown.formula_origem})
+                        </div>
+                      )}
                     </Td>
-                    <Td className="font-bold bg-slate-50 text-slate-900">{q.cost.toFixed(2)}</Td>
+                    <Td className="font-bold bg-slate-50 text-slate-900">
+                      {displayTotal.toFixed(2)}
+                    </Td>
                     <Td>{q.transit_time ? `${q.transit_time} a ${q.transit_time + 1}` : '-'}</Td>
                     <Td>Semanal</Td>
                     <Td>{q.etd ? new Date(q.etd).toLocaleDateString('pt-BR') : '-'}</Td>
@@ -653,7 +727,7 @@ export default function Ranking() {
                         Total Geral:
                       </td>
                       <td className="px-2 py-[5px] text-right font-bold text-green-700 border-b border-slate-200">
-                        USD {top1?.cost?.toFixed(2) || '-'}
+                        USD {top1 ? top1Cost.toFixed(2) : '-'}
                       </td>
                     </tr>
                     <tr>
@@ -714,7 +788,7 @@ export default function Ranking() {
                         Total Geral:
                       </td>
                       <td className="px-2 py-[5px] text-right font-bold text-slate-800 border-b border-slate-200">
-                        USD {top2?.cost?.toFixed(2) || '-'}
+                        USD {top2 ? top2Cost.toFixed(2) : '-'}
                       </td>
                     </tr>
                     <tr>
@@ -789,6 +863,11 @@ export default function Ranking() {
                     const agentDisplayName = q.option_description
                       ? `${q.agent_name} - ${q.option_description}`
                       : q.agent_name
+                    const qTaxable =
+                      pedido.modal_desejado === 'Aéreo'
+                        ? Math.ceil(q.taxable_weight || chargeableWeight)
+                        : q.taxable_weight || chargeableWeight
+                    const qTotal = getComputedTotal(q, qTaxable)
                     return (
                       <tr key={q.id} className="border-b border-slate-200 last:border-0">
                         <td className="py-1.5 px-1 border-r border-slate-200 font-black text-slate-600 bg-slate-50">
@@ -801,7 +880,7 @@ export default function Ranking() {
                           {agentDisplayName}
                         </td>
                         <td className="py-1.5 px-2 border-r border-slate-200 font-medium text-slate-700">
-                          {q.cost.toFixed(2)}
+                          {qTotal.toFixed(2)}
                         </td>
                         <td className={cn('py-1.5 px-2 font-bold', getScoreColor(getScore(q)))}>
                           {getScore(q).toFixed(2)}
