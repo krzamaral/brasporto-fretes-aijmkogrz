@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, Save, Loader2, Info, Calculator } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, Info, Calculator, AlertTriangle } from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -281,26 +281,54 @@ export default function Review() {
       <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm">
         <Stepper currentStep={4} />
 
-        {pedido && (
-          <div className="mt-8 mb-6 p-4 bg-slate-50 border rounded-lg flex items-start gap-4">
-            <Info className="h-5 w-5 text-blue-500 mt-0.5" />
-            <div>
-              <h4 className="font-semibold text-slate-800">Referência do Pedido</h4>
-              <p className="text-sm text-slate-600 mb-1">
-                {pedido.origem} → {pedido.destino} | {pedido.modal_desejado} | Prazo alvo:{' '}
-                {pedido.prazo_desejado_dias ? `${pedido.prazo_desejado_dias} dias` : 'Não definido'}
-                {pedido.peso_bruto ? ` | Peso: ${pedido.peso_bruto}kg` : ''}
-                {pedido.volume ? ` | Volume: ${pedido.volume}m³` : ''}
-                {pedido.quantidade_containers
-                  ? ` | Containers: ${pedido.quantidade_containers}`
-                  : ''}
-              </p>
-              <p className="text-sm text-slate-500">
-                Mercadoria: {pedido.tipo_mercadoria || 'Não especificada no documento'}
-              </p>
-            </div>
-          </div>
-        )}
+        {pedido &&
+          (() => {
+            let volumeCalcInfo = ''
+            if (pedido.modal_desejado === 'Aéreo') {
+              const pb = pedido.peso_bruto || 0
+              let vw = 0
+              if (pedido.comprimento && pedido.largura && pedido.altura) {
+                vw =
+                  (pedido.comprimento *
+                    pedido.largura *
+                    pedido.altura *
+                    (pedido.quantidade_containers || 1)) /
+                  6000
+                volumeCalcInfo = `Cálculo Volume Aéreo: (${pedido.comprimento}×${pedido.largura}×${pedido.altura}) / 6000 = ${vw.toFixed(2)}kg. Chargeable: ${Math.ceil(Math.max(pb, vw))}kg`
+              } else {
+                vw = (pedido.volume || 0) * 166.667
+                volumeCalcInfo = `Cálculo Volume Aéreo: ${pedido.volume || 0}m³ × 166.667 = ${vw.toFixed(2)}kg. Chargeable: ${Math.ceil(Math.max(pb, vw))}kg`
+              }
+            }
+
+            return (
+              <div className="mt-8 mb-6 p-4 bg-slate-50 border rounded-lg flex items-start gap-4">
+                <Info className="h-5 w-5 text-blue-500 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-slate-800">Referência do Pedido</h4>
+                  <p className="text-sm text-slate-600 mb-1">
+                    {pedido.origem} → {pedido.destino} | {pedido.modal_desejado} | Prazo alvo:{' '}
+                    {pedido.prazo_desejado_dias
+                      ? `${pedido.prazo_desejado_dias} dias`
+                      : 'Não definido'}
+                    {pedido.peso_bruto ? ` | Peso Bruto: ${pedido.peso_bruto}kg` : ''}
+                    {pedido.volume ? ` | Volume: ${pedido.volume}m³` : ''}
+                    {pedido.quantidade_containers
+                      ? ` | Containers: ${pedido.quantidade_containers}`
+                      : ''}
+                  </p>
+                  {volumeCalcInfo && (
+                    <p className="text-sm font-medium text-indigo-700 bg-indigo-50 inline-block px-2 py-0.5 rounded border border-indigo-100 mt-1 mb-1">
+                      {volumeCalcInfo}
+                    </p>
+                  )}
+                  <p className="text-sm text-slate-500">
+                    Mercadoria: {pedido.tipo_mercadoria || 'Não especificada no documento'}
+                  </p>
+                </div>
+              </div>
+            )
+          })()}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -329,11 +357,19 @@ export default function Review() {
 
                   <div className="flex flex-col gap-2 mb-4 ml-2">
                     <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-slate-800">
+                      <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                         Opção {index + 1}{' '}
-                        <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
+                        <span className="text-xs font-normal text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                           {roundLabel}
                         </span>
+                        {preview?.subjectToReconfirmation && (
+                          <span
+                            className="flex items-center gap-1 text-[10px] font-bold text-orange-700 bg-orange-100 px-2 py-0.5 rounded-full border border-orange-200"
+                            title="Subject to reconfirmation / Unstable"
+                          >
+                            <AlertTriangle className="w-3 h-3" /> Instável/Reconfirmação
+                          </span>
+                        )}
                       </h3>
                     </div>
                   </div>
@@ -579,8 +615,12 @@ export default function Review() {
                               <span className="font-medium">${preview.freteTotal.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between items-center pb-1 border-b border-slate-200">
-                              <span className="text-xs" title={preview.exwLog || 'Taxa de Origem'}>
-                                EXW / Origem
+                              <span
+                                className="text-xs flex flex-col"
+                                title={preview.exwLog || 'Taxa de Origem'}
+                              >
+                                <span>EXW / Origem</span>
+                                <span className="text-[9px] text-slate-400">{preview.exwLog}</span>
                               </span>
                               <span className="font-medium">
                                 ${preview.appliedTaxasOrigem.toFixed(2)}

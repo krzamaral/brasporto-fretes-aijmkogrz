@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { FileDown, Bot, Loader2, ArrowLeft, Check, RefreshCcw } from 'lucide-react'
+import {
+  FileDown,
+  Bot,
+  Loader2,
+  ArrowLeft,
+  Check,
+  RefreshCcw,
+  Trophy,
+  AlertTriangle,
+  CircleDollarSign,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getQuotationsByPedido, analisarCotacoesIA, updateQuotation } from '@/services/quotations'
 import { getPedido, type Pedido } from '@/services/pedidos'
@@ -40,14 +50,26 @@ export default function Ranking() {
       setQuotations(ranked)
 
       if (ranked.length > 0 && !aiComment) {
-        const topOption = ranked[0]
-        const topAgentName = topOption.option_description
-          ? `${topOption.agent_name} - ${topOption.option_description}`
-          : topOption.agent_name
+        const bestBalance = ranked.find((q) => q.isBestBalance) || ranked[0]
+        const cheapest = ranked.find((q) => q.isCheapest) || ranked[0]
 
-        setAiComment(
-          `A opção ${topAgentName} é a recomendada por apresentar o melhor custo-benefício (US$ ${topOption.computedTotal.toFixed(2)}) e score operacional de ${topOption.calculatedScore.toFixed(2)}, garantindo atendimento ao destino de forma eficiente.`,
-        )
+        let comment = ''
+        if (bestBalance && bestBalance !== cheapest) {
+          const bbName = bestBalance.option_description
+            ? `${bestBalance.agent_name} - ${bestBalance.option_description}`
+            : bestBalance.agent_name
+          const cheapName = cheapest.option_description
+            ? `${cheapest.agent_name} - ${cheapest.option_description}`
+            : cheapest.agent_name
+          comment = `A opção recomendada é ${bbName} (US$ ${bestBalance.computedTotal.toFixed(2)}). Embora a opção ${cheapName} seja mais barata (US$ ${cheapest.computedTotal.toFixed(2)}), a recomendada oferece um melhor equilíbrio com Transit Time reduzido (${bestBalance.transit_time} dias vs ${cheapest.transit_time} dias), justificando a diferença no All-In.`
+        } else {
+          const topAgentName = cheapest.option_description
+            ? `${cheapest.agent_name} - ${cheapest.option_description}`
+            : cheapest.agent_name
+          comment = `A opção ${topAgentName} é a recomendada por apresentar o menor custo Total All-In (US$ ${cheapest.computedTotal.toFixed(2)}) e melhor aderência aos requisitos da operação.`
+        }
+
+        setAiComment(comment)
       }
     } catch (e) {
       console.error(e)
@@ -396,9 +418,10 @@ export default function Ranking() {
           <table className="w-full text-center border-collapse whitespace-nowrap min-w-[1000px] print:min-w-0 print:whitespace-normal bg-white">
             <thead>
               <tr>
+                <Th rowSpan={2}>RANK</Th>
                 <Th rowSpan={2}>AGENTE / ROTA</Th>
                 <Th rowSpan={2}>MODAL</Th>
-                <Th colSpan={5}>MEMÓRIA DE CÁLCULO (USD)</Th>
+                <Th colSpan={5}>MEMÓRIA DE CÁLCULO (ALL-IN USD)</Th>
                 <Th colSpan={3}>OPERAÇÃO</Th>
                 <Th colSpan={2}>VALIDAÇÃO</Th>
                 <Th rowSpan={2}>
@@ -424,7 +447,7 @@ export default function Ranking() {
               </tr>
             </thead>
             <tbody>
-              {quotations.map((q) => {
+              {quotations.map((q, index) => {
                 const prazoOk =
                   pedido.prazo_desejado_dias && q.transit_time
                     ? q.transit_time <= pedido.prazo_desejado_dias
@@ -439,13 +462,38 @@ export default function Ranking() {
                     className={cn(
                       'hover:bg-slate-50 transition-colors',
                       q.isIncompleteData && 'opacity-60 bg-red-50/30',
+                      q.isBestBalance && 'bg-blue-50/40 border-l-4 border-l-blue-500',
                     )}
                   >
+                    <Td className="font-bold text-slate-500 w-12 text-center">
+                      {q.isBestBalance ? (
+                        <div className="flex flex-col items-center" title="Best Balance">
+                          <Trophy className="w-5 h-5 text-yellow-500 mb-1" />
+                          <span className="text-[9px] text-blue-700 leading-tight">
+                            Recomendada
+                          </span>
+                        </div>
+                      ) : q.isCheapest ? (
+                        <div className="flex flex-col items-center" title="Cheapest">
+                          <CircleDollarSign className="w-5 h-5 text-emerald-500 mb-1" />
+                          <span className="text-[9px] text-emerald-700 leading-tight">
+                            Mais Barata
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-sm">#{index + 1}</span>
+                      )}
+                    </Td>
                     <Td
                       className="font-bold text-left whitespace-normal max-w-[200px]"
                       title={agentDisplayName}
                     >
                       {agentDisplayName}
+                      {q.subjectToReconfirmation && (
+                        <div className="flex items-center gap-1 text-[10px] text-orange-600 font-bold mt-1 bg-orange-50 px-1 py-0.5 rounded w-fit border border-orange-100">
+                          <AlertTriangle className="w-3 h-3" /> Instável
+                        </div>
+                      )}
                       {q.isIncompleteData && (
                         <div className="text-[10px] text-red-600 font-bold mt-1">
                           DADOS INCOMPLETOS
@@ -460,15 +508,23 @@ export default function Ranking() {
                     <Td>
                       {q.freteTotal > 0 ? q.freteTotal.toFixed(2) : '-'}{' '}
                       <span className="text-[10px] text-slate-400 block">
-                        +{(q.additionalTaxes + q.destinationTaxes + q.pickupFee).toFixed(2)} tx
+                        + Pickup: {q.pickupFee.toFixed(2)}
                       </span>
                     </Td>
                     <Td title={q.cost_breakdown?.formula_origem || 'Taxa Origem'}>
                       {q.appliedTaxasOrigem > 0 ? q.appliedTaxasOrigem.toFixed(2) : '0.00'}
+                      {q.exwLog && (
+                        <span
+                          className="text-[9px] text-slate-400 block max-w-[120px] truncate mx-auto"
+                          title={q.exwLog}
+                        >
+                          {q.exwLog.split('=')[0]}
+                        </span>
+                      )}
                     </Td>
                     <Td
                       className={cn(
-                        'font-bold bg-slate-50 text-slate-900',
+                        'font-bold bg-indigo-50 text-indigo-900 text-[13px]',
                         q.isIncompleteData && 'text-red-500',
                       )}
                     >
@@ -535,8 +591,11 @@ export default function Ranking() {
                   key={q.id}
                   className="border border-slate-200 p-3 rounded bg-slate-50 print:bg-transparent print:border-slate-300"
                 >
-                  <h4 className="font-bold text-slate-800 print:text-black">
-                    {q.agent_name} {q.option_description ? `- ${q.option_description}` : ''}
+                  <h4 className="font-bold text-slate-800 print:text-black flex items-center justify-between">
+                    <span>
+                      {q.agent_name} {q.option_description ? `- ${q.option_description}` : ''}
+                    </span>
+                    {q.isBestBalance && <Trophy className="w-4 h-4 text-yellow-500" />}
                   </h4>
                   <ul className="text-xs text-slate-600 print:text-black space-y-1.5 mt-3">
                     <li>

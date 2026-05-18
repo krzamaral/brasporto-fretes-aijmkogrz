@@ -54,12 +54,12 @@ export function calculateExwDynamic(
   if (calculated === min && min > 0) {
     return {
       total: min,
-      log: `mínimo USD ${min.toFixed(2)} (cálculo: USD ${taxableWeight.toFixed(2)} * ${rate.toFixed(2)} + ${fixed.toFixed(2)} = ${(taxableWeight * rate + fixed).toFixed(2)})`,
+      log: `mínimo USD ${min.toFixed(2)} (cálculo: ${taxableWeight.toFixed(2)}kg * USD ${rate.toFixed(2)} + USD ${fixed.toFixed(2)} = USD ${(taxableWeight * rate + fixed).toFixed(2)})`,
     }
   } else {
     return {
       total: calculated,
-      log: `USD ${taxableWeight.toFixed(2)} * ${rate.toFixed(2)} + ${fixed.toFixed(2)} = ${calculated.toFixed(2)}`,
+      log: `${taxableWeight.toFixed(2)}kg * USD ${rate.toFixed(2)} + USD ${fixed.toFixed(2)} = USD ${calculated.toFixed(2)}`,
     }
   }
 }
@@ -88,7 +88,7 @@ export function calculateChargeableWeight(pedido: Pedido): number {
       const volume = pedido.volume || 0
       volumeWeight = volume * 166.667
     }
-    return Math.max(pesoBruto, volumeWeight)
+    return Math.ceil(Math.max(pesoBruto, volumeWeight))
   }
 
   const volume = pedido.volume || 0
@@ -172,6 +172,9 @@ export type EnrichedQuotation = Quotation & {
   transitScore: number
   justificativaEngine: string
   isIncompleteData: boolean
+  isCheapest: boolean
+  isBestBalance: boolean
+  subjectToReconfirmation: boolean
 }
 
 export function rankQuotations(quotations: Quotation[], pedido: Pedido): EnrichedQuotation[] {
@@ -268,6 +271,14 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
     }
 
     const compatScore = calculateCompatibility(q, pedido)
+    const subjectToReconfirmation =
+      /subject to reconfirmation|unstable|subject to change|subject to increase/i.test(
+        q.agent_name +
+          ' ' +
+          (q.option_description || '') +
+          ' ' +
+          (q.cost_breakdown?.formula_origem || ''),
+      )
 
     return {
       ...q,
@@ -288,21 +299,44 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
       justificativaEngine: '',
       isEXW,
       isIncompleteData,
+      isCheapest: false,
+      isBestBalance: false,
+      subjectToReconfirmation,
     } as EnrichedQuotation & { freteUnitario: number; isEXW: boolean }
   })
 
-  const validForMinCost = enriched.filter((q) => q.computedTotal > 0 && !q.isIncompleteData)
-  const minCost =
-    validForMinCost.length > 0 ? Math.min(...validForMinCost.map((q) => q.computedTotal)) : 1
+  // Primary Ranking by computedTotal ascending
+  enriched.sort((a, b) => {
+    if (a.isIncompleteData && !b.isIncompleteData) return 1
+    if (!a.isIncompleteData && b.isIncompleteData) return -1
+    return a.computedTotal - b.computedTotal
+  })
 
-  const validForMinTransit = enriched.filter((q) => (q.transit_time ?? 0) > 0)
-  const minTransit =
-    validForMinTransit.length > 0
-      ? Math.min(...validForMinTransit.map((q) => q.transit_time as number))
-      : 1
+  const validForRanking = enriched.filter((q) => !q.isIncompleteData && q.computedTotal > 0)
 
-  return enriched
-    .map((q) => {
+  if (validForRanking.length > 0) {
+    const cheapest = validForRanking[0]
+    cheapest.isCheapest = true
+
+    let bestBalance = cheapest
+    for (let i = 1; i < validForRanking.length; i++) {
+      const q = validForRanking[i]
+      if (q.transit_time && cheapest.transit_time) {
+        const timeDiffPct = (cheapest.transit_time - q.transit_time) / cheapest.transit_time
+        const costDiffPct = (q.computedTotal - cheapest.computedTotal) / cheapest.computedTotal
+        if (timeDiffPct >= 0.2 && costDiffPct <= 0.1) {
+          if (bestBalance === cheapest || q.transit_time < bestBalance.transit_time!) {
+            bestBalance = q
+          }
+        }
+      }
+    }
+    bestBalance.isBestBalance = true
+
+    const minCost = cheapest.computedTotal
+    const minTransit = Math.min(...validForRanking.map((q) => q.transit_time || 999))
+
+    enriched.forEach((q) => {
       let costScore = 0
       if (!q.isIncompleteData && q.computedTotal > 0) {
         costScore = (minCost / q.computedTotal) * 50
@@ -318,7 +352,12 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
       if (q.isIncompleteData) {
         justificativa = `Dados Incompletos: Não foi possível calcular o custo total devido à falta de peso, dimensões ou peso taxável na extração.`
       } else {
-        justificativa = `Score Total: ${finalScore.toFixed(1)}/100 (Custo: ${costScore.toFixed(1)}/50, Transit Time: ${transitScore.toFixed(1)}/30, Compatibilidade: ${compatScorePoints.toFixed(1)}/20).\n`
+        if (q.isBestBalance && q !== cheapest) {
+          justificativa = `🏆 Opção Recomendada (Best Balance): Transit time ${(((cheapest.transit_time! - q.transit_time!) / cheapest.transit_time!) * 100).toFixed(0)}% menor com custo apenas ${(((q.computedTotal - cheapest.computedTotal) / cheapest.computedTotal) * 100).toFixed(0)}% maior que a mais barata.\n\n`
+        } else if (q.isCheapest) {
+          justificativa = `💰 Opção Mais Barata (Menor Custo Total All-In).\n\n`
+        }
+        justificativa += `Score Operacional: ${finalScore.toFixed(1)}/100 (Custo: ${costScore.toFixed(1)}/50, Transit Time: ${transitScore.toFixed(1)}/30, Compatibilidade: ${compatScorePoints.toFixed(1)}/20).\n`
         justificativa += `Detalhamento de Custos (USD ${q.computedTotal.toFixed(2)}):\n`
         justificativa += `- Frete Base: USD ${q.freteTotal.toFixed(2)} (${q.qTaxable.toFixed(2)} kg * USD ${(q as any).freteUnitario.toFixed(2)})\n`
         if ((q as any).isEXW) {
@@ -337,13 +376,12 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
         }
       }
 
-      return {
-        ...q,
-        calculatedScore: finalScore,
-        costScore,
-        transitScore,
-        justificativaEngine: justificativa,
-      }
+      q.calculatedScore = finalScore
+      q.costScore = costScore
+      q.transitScore = transitScore
+      q.justificativaEngine = justificativa
     })
-    .sort((a, b) => b.calculatedScore - a.calculatedScore)
+  }
+
+  return enriched
 }
