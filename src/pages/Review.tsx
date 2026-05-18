@@ -99,17 +99,6 @@ export default function Review() {
     return rankQuotations(mapped, pedido)
   }, [watchedQuotes, pedido])
 
-  useEffect(() => {
-    if (previewData.length > 0 && watchedQuotes && watchedQuotes.length > 0) {
-      previewData.forEach((preview, idx) => {
-        const currentCost = form.getValues(`quotes.${idx}.cost`)
-        if (currentCost !== preview.computedTotal) {
-          form.setValue(`quotes.${idx}.cost`, preview.computedTotal, { shouldValidate: true })
-        }
-      })
-    }
-  }, [previewData, form, watchedQuotes])
-
   useRealtime('extracted_data', (e) => {
     if (e.action === 'create' || e.action === 'update') {
       toast({
