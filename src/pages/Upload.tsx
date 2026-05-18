@@ -160,6 +160,7 @@ export default function Upload() {
   const [cota1Quotes, setCota1Quotes] = useState<any[]>([])
 
   const [autoDetectedIncoterm, setAutoDetectedIncoterm] = useState(false)
+  const [autoDetectedOrigem, setAutoDetectedOrigem] = useState(false)
   const [reviewQuotes, setReviewQuotes] = useState<any[] | null>(null)
   const [reviewIncoterm, setReviewIncoterm] = useState<string>('')
   const [reviewIncotermDetected, setReviewIncotermDetected] = useState(false)
@@ -324,6 +325,8 @@ export default function Upload() {
           'CIF',
         ].includes(extracted?.incoterm)
 
+        const hasExtractedOrigem = !!extracted?.origem
+
         form.reset({
           origem: extracted?.origem || '',
           destino: extracted?.destino || '',
@@ -342,6 +345,7 @@ export default function Upload() {
             : null,
         })
         setAutoDetectedIncoterm(hasExtractedIncoterm)
+        setAutoDetectedOrigem(hasExtractedOrigem)
         setStatus('form')
         toast({ title: 'Dados extraídos', description: 'Revise os dados do pedido abaixo.' })
       } else if (wizardStep === 2 || wizardStep === 3) {
@@ -777,9 +781,25 @@ export default function Upload() {
                   name="origem"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Origem</FormLabel>
+                      <FormLabel className="flex items-center gap-2">
+                        Origem
+                        {autoDetectedOrigem && (
+                          <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 border border-blue-200">
+                            Formatado IA
+                          </span>
+                        )}
+                      </FormLabel>
                       <FormControl>
-                        <Input {...field} />
+                        <Input
+                          {...field}
+                          onChange={(e) => {
+                            field.onChange(e)
+                            setAutoDetectedOrigem(false)
+                          }}
+                          className={
+                            autoDetectedOrigem ? 'border-blue-400 ring-1 ring-blue-200' : ''
+                          }
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
