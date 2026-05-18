@@ -96,15 +96,21 @@ export function calculateChargeableWeight(pedido: Pedido): number {
     return Math.ceil(Math.max(pesoBruto, volumeWeight))
   }
 
-  const volume = pedido.volume || 0
+  let volume = pedido.volume || 0
   if (pedido.comprimento && pedido.largura && pedido.altura) {
     const vol =
       (pedido.comprimento * pedido.largura * pedido.altura * (pedido.quantidade_containers || 1)) /
       1000000
-    return Math.max(pesoBruto / 1000, Math.max(volume, vol))
+    if (vol > volume) volume = vol
   }
 
-  return Math.max(pesoBruto / 1000, volume)
+  const baseWeight = Math.max(pesoBruto / 1000, volume)
+
+  if (pedido.modal_desejado === 'LCL') {
+    return Math.max(4, Math.ceil(baseWeight))
+  }
+
+  return baseWeight
 }
 
 function calculateCompatibility(q: Quotation, pedido: Pedido): number {
@@ -208,7 +214,10 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
       pedido.modal_desejado === 'Aéreo'
         ? Math.max(Math.ceil(q.taxable_weight || 0), chargeableWeight)
         : pedido.modal_desejado === 'LCL'
-          ? Math.max(q.taxable_weight || 0, chargeableWeight)
+          ? Math.max(
+              q.taxable_weight ? Math.max(4, Math.ceil(q.taxable_weight)) : 0,
+              chargeableWeight,
+            )
           : q.taxable_weight || chargeableWeight
 
     let freteUnitario = q.cost_breakdown?.frete_unitario ?? q.rate_unitario ?? 0

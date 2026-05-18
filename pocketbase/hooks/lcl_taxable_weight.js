@@ -15,7 +15,8 @@ onRecordCreate((e) => {
         if (vol > volume) volume = vol
       }
 
-      const calcWeight = Math.max(pesoBruto / 1000, volume)
+      const baseWeight = Math.max(pesoBruto / 1000, volume)
+      const calcWeight = Math.max(4, Math.ceil(baseWeight))
       record.set('taxable_weight', calcWeight)
     } catch (err) {
       $app.logger().warn('Failed to apply LCL taxable weight: ' + String(err))
@@ -41,7 +42,8 @@ onRecordUpdate((e) => {
         if (vol > volume) volume = vol
       }
 
-      const calcWeight = Math.max(pesoBruto / 1000, volume)
+      const baseWeight = Math.max(pesoBruto / 1000, volume)
+      const calcWeight = Math.max(4, Math.ceil(baseWeight))
       record.set('taxable_weight', calcWeight)
     } catch (err) {
       $app.logger().warn('Failed to apply LCL taxable weight: ' + String(err))

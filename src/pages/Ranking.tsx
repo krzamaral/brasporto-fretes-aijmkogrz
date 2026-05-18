@@ -358,7 +358,11 @@ export default function Ranking() {
                   <Td>{pesoBruto.toFixed(2)} kg</Td>
                 </tr>
                 <tr>
-                  <LabelTd>Peso Taxável (Base):</LabelTd>
+                  <LabelTd>
+                    {pedido.modal_desejado === 'LCL'
+                      ? 'Peso Faturável (LCL):'
+                      : 'Peso Taxável (Base):'}
+                  </LabelTd>
                   <Td className="font-bold text-slate-800">
                     <div className="flex items-center justify-center gap-1">
                       {chargeableWeight.toFixed(2)}{' '}
@@ -372,7 +376,9 @@ export default function Ranking() {
                             ? pedido.comprimento && pedido.largura && pedido.altura
                               ? `Volumétrico: (${pedido.comprimento}×${pedido.largura}×${pedido.altura}) / 6000 = ${((pedido.comprimento * pedido.largura * pedido.altura * (pedido.quantidade_containers || 1)) / 6000).toFixed(2)} kg`
                               : `Volumétrico: ${pedido.volume || 0} m³ / 0.006 = ${((pedido.volume || 0) / 0.006).toFixed(2)} kg`
-                            : `Peso Base: ${chargeableWeight.toFixed(2)}`}
+                            : pedido.modal_desejado === 'LCL'
+                              ? `Mínimo de 4 ton. Arredondamento para cima: max(4, ceil(max(${pedido.peso_bruto ? (pedido.peso_bruto / 1000).toFixed(2) : 0} ton, ${pedido.volume || 0} CBM)))`
+                              : `Peso Base: ${chargeableWeight.toFixed(2)}`}
                         </TooltipContent>
                       </Tooltip>
                     </div>

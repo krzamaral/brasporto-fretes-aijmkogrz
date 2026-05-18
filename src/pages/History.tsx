@@ -168,7 +168,11 @@ export default function History() {
               </div>
             </div>
             <div className="bg-slate-50 print:bg-transparent p-3 rounded border border-slate-100 print:border-slate-300">
-              <div className="text-slate-500 text-xs mb-1">Peso Taxável (Base)</div>
+              <div className="text-slate-500 text-xs mb-1">
+                {pedido.modal_desejado === 'LCL'
+                  ? 'Peso Faturável (Mín. 4t/Arred.)'
+                  : 'Peso Taxável (Base)'}
+              </div>
               <div className="font-bold text-blue-700 print:text-black">
                 {chargeableWeight.toFixed(2)} {isAereo ? 'kg' : 'ton/cbm'}
               </div>
