@@ -38,8 +38,11 @@ export default function Ranking() {
         if (quots.length > 0) {
           const sorted = [...quots].sort((a, b) => getScore(b) - getScore(a))
           const topOption = sorted[0]
+          const topAgentName = topOption.option_description
+            ? `${topOption.agent_name} - ${topOption.option_description}`
+            : topOption.agent_name
           setAiComment(
-            `A opção ${topOption.agent_name} é a recomendada por apresentar o melhor custo-benefício (US$ ${topOption.cost.toFixed(2)}) e score operacional de ${getScore(topOption).toFixed(2)}, garantindo atendimento ao destino de forma eficiente.`,
+            `A opção ${topAgentName} é a recomendada por apresentar o melhor custo-benefício (US$ ${topOption.cost.toFixed(2)}) e score operacional de ${getScore(topOption).toFixed(2)}, garantindo atendimento ao destino de forma eficiente.`,
           )
         }
       } catch (e) {
@@ -57,7 +60,9 @@ export default function Ranking() {
         pedido_id: pedido.id,
         cotacoes: quotations.map((q) => ({
           id: q.id,
-          agent_name: q.agent_name,
+          agent_name: q.option_description
+            ? `${q.agent_name} - ${q.option_description}`
+            : q.agent_name,
           modal: q.modal,
           cost: q.cost,
           transit_time: q.transit_time,
@@ -517,13 +522,34 @@ export default function Ranking() {
                     ? q.transit_time <= pedido.prazo_desejado_dias
                     : true
 
+                const agentDisplayName = q.option_description
+                  ? `${q.agent_name} - ${q.option_description}`
+                  : q.agent_name
+
                 return (
                   <tr key={q.id} className="hover:bg-slate-50 transition-colors">
-                    <Td className="font-bold text-left">{q.agent_name}</Td>
+                    <Td
+                      className="font-bold text-left truncate max-w-[200px]"
+                      title={agentDisplayName}
+                    >
+                      {agentDisplayName}
+                    </Td>
                     <Td>{q.modal}</Td>
-                    <Td>{q.cost.toFixed(2)}</Td>
-                    <Td>-</Td>
-                    <Td>-</Td>
+                    <Td>
+                      {q.cost_breakdown?.freight
+                        ? q.cost_breakdown.freight.toFixed(2)
+                        : q.cost.toFixed(2)}
+                    </Td>
+                    <Td>
+                      {q.cost_breakdown?.origin_taxes
+                        ? q.cost_breakdown.origin_taxes.toFixed(2)
+                        : '-'}
+                    </Td>
+                    <Td>
+                      {q.cost_breakdown?.destination_taxes
+                        ? q.cost_breakdown.destination_taxes.toFixed(2)
+                        : '-'}
+                    </Td>
                     <Td className="font-bold bg-slate-50 text-slate-900">{q.cost.toFixed(2)}</Td>
                     <Td>{q.transit_time ? `${q.transit_time} a ${q.transit_time + 1}` : '-'}</Td>
                     <Td>Semanal</Td>
@@ -564,91 +590,8 @@ export default function Ranking() {
 
         {/* Footer Data Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-          {/* Legend and Ponderation (Col 1-3) */}
-          <div className="lg:col-span-3 space-y-4 flex flex-col">
-            <div>
-              <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
-                CRITÉRIOS DE PONDERAÇÃO
-              </div>
-              <table className="w-full border-collapse text-[11px]">
-                <tbody>
-                  <tr>
-                    <td className="border border-slate-300 px-2 py-1.5 bg-white text-slate-700">
-                      Custo Total (peso)
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-white text-slate-800 w-12">
-                      50%
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-2 py-1.5 bg-white text-slate-700">
-                      Transit Time (peso)
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-white text-slate-800 w-12">
-                      30%
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-2 py-1.5 bg-white text-slate-700">
-                      Condições Operacionais
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-semibold bg-white text-slate-800 w-12">
-                      20%
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-2 py-1.5 bg-slate-100 font-bold text-slate-800">
-                      TOTAL
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center font-bold bg-slate-100 text-slate-800 w-12">
-                      100%
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex-1">
-              <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
-                LEGENDA SCORE OPERACIONAL
-              </div>
-              <table className="w-full border-collapse text-[11px] text-center font-bold h-full">
-                <tbody>
-                  <tr>
-                    <td className="border border-slate-300 py-1.5 bg-[#c6e5b1] text-green-900 w-1/2">
-                      0,80 a 1,00
-                    </td>
-                    <td className="border border-slate-300 py-1.5 bg-white text-slate-700 w-1/2">
-                      Excelente
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 py-1.5 bg-[#fff2cc] text-yellow-900">
-                      0,60 a 0,79
-                    </td>
-                    <td className="border border-slate-300 py-1.5 bg-white text-slate-700">Bom</td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 py-1.5 bg-[#f8cbad] text-orange-900">
-                      0,40 a 0,59
-                    </td>
-                    <td className="border border-slate-300 py-1.5 bg-white text-slate-700">
-                      Regular
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 py-1.5 bg-[#f4b084] text-red-900">
-                      0,00 a 0,39
-                    </td>
-                    <td className="border border-slate-300 py-1.5 bg-white text-slate-700">Ruim</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Decision Summary (Col 4-8) */}
-          <div className="lg:col-span-5 flex flex-col">
+          {/* Decision Summary (Col 1-7) */}
+          <div className="lg:col-span-7 flex flex-col">
             <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
               RESUMO DA DECISÃO
             </div>
@@ -665,10 +608,16 @@ export default function Ranking() {
                         Agente:
                       </td>
                       <td
-                        className="px-2 py-[5px] text-right font-bold text-slate-800 border-b border-slate-200 truncate max-w-[80px]"
-                        title={top1?.agent_name}
+                        className="px-2 py-[5px] text-right font-bold text-slate-800 border-b border-slate-200 truncate max-w-[120px]"
+                        title={
+                          top1
+                            ? `${top1.agent_name}${top1.option_description ? ` - ${top1.option_description}` : ''}`
+                            : undefined
+                        }
                       >
-                        {top1?.agent_name || '-'}
+                        {top1
+                          ? `${top1.agent_name}${top1.option_description ? ` - ${top1.option_description}` : ''}`
+                          : '-'}
                       </td>
                     </tr>
                     <tr>
@@ -720,10 +669,16 @@ export default function Ranking() {
                         Agente:
                       </td>
                       <td
-                        className="px-2 py-[5px] text-right font-bold text-slate-800 border-b border-slate-200 truncate max-w-[80px]"
-                        title={top2?.agent_name}
+                        className="px-2 py-[5px] text-right font-bold text-slate-800 border-b border-slate-200 truncate max-w-[120px]"
+                        title={
+                          top2
+                            ? `${top2.agent_name}${top2.option_description ? ` - ${top2.option_description}` : ''}`
+                            : undefined
+                        }
                       >
-                        {top2?.agent_name || '-'}
+                        {top2
+                          ? `${top2.agent_name}${top2.option_description ? ` - ${top2.option_description}` : ''}`
+                          : '-'}
                       </td>
                     </tr>
                     <tr>
@@ -784,8 +739,8 @@ export default function Ranking() {
             </div>
           </div>
 
-          {/* Ranking List (Col 9-12) */}
-          <div className="lg:col-span-4 h-full flex flex-col">
+          {/* Ranking List (Col 8-12) */}
+          <div className="lg:col-span-5 h-full flex flex-col">
             <div className="bg-[#00749b] text-white font-bold text-center py-1.5 text-[11px] uppercase tracking-wide rounded-t-sm">
               RANKING FINAL (Elegíveis)
             </div>
@@ -802,25 +757,30 @@ export default function Ranking() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedQuots.slice(0, 5).map((q, idx) => (
-                    <tr key={q.id} className="border-b border-slate-200 last:border-0">
-                      <td className="py-1.5 px-1 border-r border-slate-200 font-black text-slate-600 bg-slate-50">
-                        {idx + 1}
-                      </td>
-                      <td
-                        className="py-1.5 px-2 border-r border-slate-200 font-bold text-slate-800 text-left truncate max-w-[100px]"
-                        title={q.agent_name}
-                      >
-                        {q.agent_name}
-                      </td>
-                      <td className="py-1.5 px-2 border-r border-slate-200 font-medium text-slate-700">
-                        {q.cost.toFixed(2)}
-                      </td>
-                      <td className={cn('py-1.5 px-2 font-bold', getScoreColor(getScore(q)))}>
-                        {getScore(q).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
+                  {sortedQuots.slice(0, 5).map((q, idx) => {
+                    const agentDisplayName = q.option_description
+                      ? `${q.agent_name} - ${q.option_description}`
+                      : q.agent_name
+                    return (
+                      <tr key={q.id} className="border-b border-slate-200 last:border-0">
+                        <td className="py-1.5 px-1 border-r border-slate-200 font-black text-slate-600 bg-slate-50">
+                          {idx + 1}
+                        </td>
+                        <td
+                          className="py-1.5 px-2 border-r border-slate-200 font-bold text-slate-800 text-left truncate max-w-[150px]"
+                          title={agentDisplayName}
+                        >
+                          {agentDisplayName}
+                        </td>
+                        <td className="py-1.5 px-2 border-r border-slate-200 font-medium text-slate-700">
+                          {q.cost.toFixed(2)}
+                        </td>
+                        <td className={cn('py-1.5 px-2 font-bold', getScoreColor(getScore(q)))}>
+                          {getScore(q).toFixed(2)}
+                        </td>
+                      </tr>
+                    )
+                  })}
                   {sortedQuots.length === 0 && (
                     <tr>
                       <td colSpan={4} className="py-4 text-slate-500">

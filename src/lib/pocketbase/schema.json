@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-18T14:19:33.505Z",
+  "generatedAt": "2026-05-18T14:33:03.339Z",
   "collections": [
     {
       "name": "users",
@@ -144,6 +144,18 @@
           "required": false,
           "system": false,
           "collectionRef": "pedidos"
+        },
+        {
+          "name": "cost_breakdown",
+          "type": "json",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "option_description",
+          "type": "text",
+          "required": false,
+          "system": false
         }
       ],
       "indexes": ["CREATE INDEX idx_quotations_user_id ON quotations (user_id)"]
