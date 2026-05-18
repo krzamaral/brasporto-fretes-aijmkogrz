@@ -646,6 +646,15 @@ export default function Ranking() {
 
                   <div className="mt-4 pt-3 border-t border-slate-200 print:border-slate-300">
                     <h5 className="text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      Fórmula "All-in"
+                    </h5>
+                    <div className="text-[10px] font-mono text-slate-600 bg-blue-50/50 p-2 border border-blue-100 rounded mb-3">
+                      ({q.qTaxable.toFixed(2)} * {q.freteUnitario.toFixed(2)}) +{' '}
+                      {q.appliedTaxasOrigem.toFixed(2)} + {q.pickupFee.toFixed(2)} +{' '}
+                      {q.additionalTaxes.toFixed(2)} = USD {q.computedTotal.toFixed(2)}
+                    </div>
+
+                    <h5 className="text-[10px] font-bold text-slate-500 uppercase mb-1">
                       Justificativa Técnica (Motor de Ranking)
                     </h5>
                     <div

@@ -110,6 +110,7 @@ export default function Review() {
   })
 
   useEffect(() => {
+    let isMounted = true
     async function loadData() {
       const state = location.state as { pedidoId: string; cota1Quotes: any[]; cota2Quote: any }
       if (!state || !state.pedidoId) {
@@ -124,6 +125,7 @@ export default function Review() {
 
       try {
         const ped = await getPedido(state.pedidoId)
+        if (!isMounted) return
         setPedido(ped)
 
         const combined = []
@@ -190,13 +192,17 @@ export default function Review() {
           }),
         })
       } catch (error) {
-        toast({ title: 'Erro', description: 'Falha ao carregar dados.', variant: 'destructive' })
+        if (isMounted)
+          toast({ title: 'Erro', description: 'Falha ao carregar dados.', variant: 'destructive' })
       } finally {
-        setLoading(false)
+        if (isMounted) setLoading(false)
       }
     }
     loadData()
-  }, [form, location, navigate, toast])
+    return () => {
+      isMounted = false
+    }
+  }, [location.state?.pedidoId])
 
   const onSubmit = async (data: FormValues) => {
     if (!user || !pedido) return
@@ -628,9 +634,42 @@ export default function Review() {
                             Resumo da Formação de Preço
                           </h4>
                           <div className="space-y-2 text-sm text-slate-700">
-                            <div className="flex justify-between items-center pb-1 border-b border-slate-200">
+                            <div className="flex flex-col gap-1 pb-2 border-b border-slate-200">
+                              <span className="text-[10px] text-slate-500 font-semibold uppercase">
+                                Cálculo de Peso
+                              </span>
+                              <div className="text-xs text-slate-600 bg-slate-100 p-1.5 rounded">
+                                {pedido?.modal_desejado === 'Aéreo' ? (
+                                  <>
+                                    <span>
+                                      Bruto: {pedido?.peso_bruto?.toFixed(2)} kg vs Volumétrico:{' '}
+                                      {pedido?.comprimento && pedido?.largura && pedido?.altura
+                                        ? (
+                                            (pedido.comprimento *
+                                              pedido.largura *
+                                              pedido.altura *
+                                              (pedido.quantidade_containers || 1)) /
+                                            6000
+                                          ).toFixed(2)
+                                        : ((pedido?.volume || 0) / 0.006).toFixed(2)}{' '}
+                                      kg
+                                    </span>
+                                    <div className="font-bold text-slate-800 mt-0.5">
+                                      Chargeable Weight: {preview.qTaxable.toFixed(2)} kg
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="font-bold text-slate-800">
+                                    Taxable Weight: {preview.qTaxable.toFixed(2)}{' '}
+                                    {preview.modal === 'LCL' ? 'ton/m³' : ''}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex justify-between items-center pb-1 border-b border-slate-200 pt-1">
                               <span className="text-xs">
-                                Base ({preview.qTaxable.toFixed(2)} ×{' '}
+                                Frete ({preview.qTaxable.toFixed(2)} ×{' '}
                                 {preview.freteUnitario.toFixed(2)})
                               </span>
                               <span className="font-medium">${preview.freteTotal.toFixed(2)}</span>
@@ -641,7 +680,7 @@ export default function Review() {
                                 title={preview.exwLog || 'Taxa de Origem'}
                               >
                                 <span>EXW / Origem</span>
-                                <span className="text-[9px] text-slate-400">{preview.exwLog}</span>
+                                <span className="text-[9px] text-slate-500">{preview.exwLog}</span>
                               </span>
                               <span className="font-medium">
                                 ${preview.appliedTaxasOrigem.toFixed(2)}
@@ -657,11 +696,21 @@ export default function Review() {
                                 ${preview.additionalTaxes.toFixed(2)}
                               </span>
                             </div>
-                            <div className="flex justify-between items-center pt-2">
-                              <span className="font-bold text-slate-900">Total Calculado</span>
-                              <span className="font-black text-lg text-blue-700">
-                                ${preview.computedTotal.toFixed(2)}
-                              </span>
+                            <div className="flex flex-col pt-2">
+                              <div className="flex justify-between items-center mb-1">
+                                <span className="font-bold text-slate-900">Total All-In</span>
+                                <span className="font-black text-lg text-blue-700">
+                                  ${preview.computedTotal.toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 bg-blue-50/50 p-1.5 rounded border border-blue-100 font-mono">
+                                Fórmula: ({preview.qTaxable.toFixed(2)} *{' '}
+                                {preview.freteUnitario.toFixed(2)}) +{' '}
+                                {preview.appliedTaxasOrigem.toFixed(2)} +{' '}
+                                {preview.pickupFee.toFixed(2)} +{' '}
+                                {preview.additionalTaxes.toFixed(2)} ={' '}
+                                {preview.computedTotal.toFixed(2)}
+                              </div>
                             </div>
 
                             {preview.isIncompleteData && (

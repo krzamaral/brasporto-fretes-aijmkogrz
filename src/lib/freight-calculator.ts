@@ -14,6 +14,10 @@ export function calculateExwDynamic(
   let min = defaultMin
   let hasMatch = false
 
+  if (!formula && fallbackValue > 0) {
+    return { total: fallbackValue, log: `Valor informado: USD ${fallbackValue.toFixed(2)}` }
+  }
+
   if (formula) {
     const upper = formula.toUpperCase()
 
@@ -49,12 +53,13 @@ export function calculateExwDynamic(
     }
   }
 
-  const calculated = Math.max(taxableWeight * rate + fixed, min)
+  const baseCalculated = taxableWeight * rate + fixed
+  const calculated = Math.max(baseCalculated, min)
 
   if (calculated === min && min > 0) {
     return {
       total: min,
-      log: `mínimo USD ${min.toFixed(2)} (cálculo: ${taxableWeight.toFixed(2)}kg * USD ${rate.toFixed(2)} + USD ${fixed.toFixed(2)} = USD ${(taxableWeight * rate + fixed).toFixed(2)})`,
+      log: `mínimo USD ${min.toFixed(2)} (cálculo: ${taxableWeight.toFixed(2)}kg * USD ${rate.toFixed(2)} + USD ${fixed.toFixed(2)} = USD ${baseCalculated.toFixed(2)})`,
     }
   } else {
     return {
@@ -213,7 +218,7 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
     let taxasOrigem = q.cost_breakdown?.taxas_origem || q.cost_breakdown?.origin_taxes || 0
     let exwLog = ''
 
-    if (q.cost_breakdown?.formula_origem || isEXW) {
+    if (q.cost_breakdown?.formula_origem || (isEXW && taxasOrigem === 0)) {
       const cb = q.cost_breakdown as any
       const taxaKg = cb?.taxa_kg !== undefined ? Number(cb.taxa_kg) : 0.15
       const taxaFixa = cb?.taxa_fixa !== undefined ? Number(cb.taxa_fixa) : 110.5
@@ -229,6 +234,8 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
       )
       taxasOrigem = exwRes.total
       exwLog = exwRes.log
+    } else if (isEXW && taxasOrigem > 0) {
+      exwLog = `Valor Fixo/Informado: USD ${taxasOrigem.toFixed(2)}`
     }
 
     const appliedTaxasOrigem = isEXW ? taxasOrigem : taxasOrigem || 0
