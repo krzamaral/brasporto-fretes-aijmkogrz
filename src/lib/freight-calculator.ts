@@ -80,15 +80,22 @@ export function calculateExw(
 export function calculateChargeableWeight(pedido: Pedido): number {
   const pesoBruto = pedido.peso_bruto || 0
 
+  let calcVolumeM3 = 0
+  if (pedido.itens && pedido.itens.length > 0) {
+    calcVolumeM3 = pedido.itens.reduce((acc, item) => {
+      return acc + (item.comprimento * item.largura * item.altura * item.quantidade) / 1000000
+    }, 0)
+  } else if (pedido.comprimento && pedido.largura && pedido.altura) {
+    calcVolumeM3 =
+      (pedido.comprimento * pedido.largura * pedido.altura * (pedido.quantidade_containers || 1)) /
+      1000000
+  }
+
   if (pedido.modal_desejado === 'Aéreo') {
     let volumeWeight = 0
-    if (pedido.comprimento && pedido.largura && pedido.altura) {
-      volumeWeight =
-        (pedido.comprimento *
-          pedido.largura *
-          pedido.altura *
-          (pedido.quantidade_containers || 1)) /
-        6000
+    if (calcVolumeM3 > 0) {
+      // 1 m3 = 166.667 kg in air freight (which is equivalent to / 6000 for cm3)
+      volumeWeight = calcVolumeM3 * 166.666666667
     } else {
       const volume = pedido.volume || 0
       volumeWeight = volume / 0.006
@@ -97,12 +104,7 @@ export function calculateChargeableWeight(pedido: Pedido): number {
   }
 
   let volume = pedido.volume || 0
-  if (pedido.comprimento && pedido.largura && pedido.altura) {
-    const vol =
-      (pedido.comprimento * pedido.largura * pedido.altura * (pedido.quantidade_containers || 1)) /
-      1000000
-    if (vol > volume) volume = vol
-  }
+  if (calcVolumeM3 > volume) volume = calcVolumeM3
 
   const baseWeight = Math.max(pesoBruto / 1000, volume)
 
@@ -193,7 +195,8 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
 
   const chargeableWeight = calculateChargeableWeight(pedido)
 
-  const isLWHMissing = !pedido.comprimento || !pedido.largura || !pedido.altura
+  const hasItens = pedido.itens && pedido.itens.length > 0
+  const isLWHMissing = !hasItens && (!pedido.comprimento || !pedido.largura || !pedido.altura)
   const isWeightMissing = !pedido.peso_bruto
 
   const enriched = quotations.map((q) => {

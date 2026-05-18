@@ -299,7 +299,16 @@ export default function Review() {
             if (pedido.modal_desejado === 'Aéreo') {
               const pb = pedido.peso_bruto || 0
               let vw = 0
-              if (pedido.comprimento && pedido.largura && pedido.altura) {
+              if (pedido.itens && pedido.itens.length > 0) {
+                const totalM3 = pedido.itens.reduce(
+                  (acc, item) =>
+                    acc +
+                    (item.comprimento * item.largura * item.altura * item.quantidade) / 1000000,
+                  0,
+                )
+                vw = totalM3 * 166.666666667
+                volumeCalcInfo = `Cálculo Volume Aéreo: ${totalM3.toFixed(3)} m³ × 166.667 = ${vw.toFixed(2)} kg. Chargeable: ${Math.ceil(Math.max(pb, vw))} kg`
+              } else if (pedido.comprimento && pedido.largura && pedido.altura) {
                 vw =
                   (pedido.comprimento *
                     pedido.largura *
@@ -311,6 +320,31 @@ export default function Review() {
                 vw = (pedido.volume || 0) / 0.006
                 volumeCalcInfo = `Cálculo Volume Aéreo: ${pedido.volume || 0} m³ / 0.006 = ${vw.toFixed(2)} kg. Chargeable: ${Math.ceil(Math.max(pb, vw))} kg`
               }
+            } else if (pedido.modal_desejado === 'LCL') {
+              const pb = pedido.peso_bruto || 0
+              let totalM3 = pedido.volume || 0
+              if (pedido.itens && pedido.itens.length > 0) {
+                const calcM3 = pedido.itens.reduce(
+                  (acc, item) =>
+                    acc +
+                    (item.comprimento * item.largura * item.altura * item.quantidade) / 1000000,
+                  0,
+                )
+                if (calcM3 > totalM3) totalM3 = calcM3
+              } else if (pedido.comprimento && pedido.largura && pedido.altura) {
+                const calcM3 =
+                  (pedido.comprimento *
+                    pedido.largura *
+                    pedido.altura *
+                    (pedido.quantidade_containers || 1)) /
+                  1000000
+                if (calcM3 > totalM3) totalM3 = calcM3
+              }
+              const ton = pb / 1000
+              const baseWeight = Math.max(ton, totalM3)
+              const ceilWeight = Math.ceil(baseWeight)
+              const finalWeight = Math.max(4, ceilWeight)
+              volumeCalcInfo = `Cálculo Volume LCL: max(${ton.toFixed(2)} ton, ${totalM3.toFixed(2)} cbm) = ${baseWeight.toFixed(2)}. Arredonda = ${ceilWeight}. Piso Mínimo = ${finalWeight} ton`
             }
 
             return (
@@ -327,6 +361,9 @@ export default function Review() {
                     {pedido.volume ? ` | Volume: ${pedido.volume}m³` : ''}
                     {pedido.quantidade_containers
                       ? ` | Containers: ${pedido.quantidade_containers}`
+                      : ''}
+                    {pedido.itens && pedido.itens.length > 0
+                      ? ` | ${pedido.itens.length} tipo(s) de volume(s)`
                       : ''}
                   </p>
                   {volumeCalcInfo && (

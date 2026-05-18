@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-18T20:25:48.223Z",
+  "generatedAt": "2026-05-18T20:38:22.553Z",
   "collections": [
     {
       "name": "users",
@@ -349,6 +349,12 @@
         {
           "name": "altura",
           "type": "number",
+          "required": false,
+          "system": false
+        },
+        {
+          "name": "itens",
+          "type": "json",
           "required": false,
           "system": false
         }

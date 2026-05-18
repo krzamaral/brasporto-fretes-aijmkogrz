@@ -333,9 +333,11 @@ export default function Ranking() {
                 <tr>
                   <LabelTd>Dimensões:</LabelTd>
                   <Td>
-                    {pedido.comprimento && pedido.largura && pedido.altura
-                      ? `${pedido.comprimento}x${pedido.largura}x${pedido.altura} cm`
-                      : '-'}
+                    {pedido.itens && pedido.itens.length > 0
+                      ? `${pedido.itens.length} vol(s) detalhados`
+                      : pedido.comprimento && pedido.largura && pedido.altura
+                        ? `${pedido.comprimento}x${pedido.largura}x${pedido.altura} cm`
+                        : '-'}
                   </Td>
                 </tr>
               </tbody>
@@ -377,7 +379,36 @@ export default function Ranking() {
                               ? `Volumétrico: (${pedido.comprimento}×${pedido.largura}×${pedido.altura}) / 6000 = ${((pedido.comprimento * pedido.largura * pedido.altura * (pedido.quantidade_containers || 1)) / 6000).toFixed(2)} kg`
                               : `Volumétrico: ${pedido.volume || 0} m³ / 0.006 = ${((pedido.volume || 0) / 0.006).toFixed(2)} kg`
                             : pedido.modal_desejado === 'LCL'
-                              ? `Mínimo de 4 ton. Arredondamento para cima: max(4, ceil(max(${pedido.peso_bruto ? (pedido.peso_bruto / 1000).toFixed(2) : 0} ton, ${pedido.volume || 0} CBM)))`
+                              ? (() => {
+                                  const ton = (pedido.peso_bruto || 0) / 1000
+                                  let cbm = pedido.volume || 0
+                                  if (pedido.itens && pedido.itens.length > 0) {
+                                    const calc = pedido.itens.reduce(
+                                      (acc, i) =>
+                                        acc +
+                                        (i.comprimento * i.largura * i.altura * i.quantidade) /
+                                          1000000,
+                                      0,
+                                    )
+                                    if (calc > cbm) cbm = calc
+                                  } else if (
+                                    pedido.comprimento &&
+                                    pedido.largura &&
+                                    pedido.altura
+                                  ) {
+                                    const calc =
+                                      (pedido.comprimento *
+                                        pedido.largura *
+                                        pedido.altura *
+                                        (pedido.quantidade_containers || 1)) /
+                                      1000000
+                                    if (calc > cbm) cbm = calc
+                                  }
+                                  const base = Math.max(ton, cbm)
+                                  const round = Math.ceil(base)
+                                  const final = Math.max(4, round)
+                                  return `${ton.toFixed(2)} ton vs ${cbm.toFixed(2)} CBM -> ${base.toFixed(2)} arredondado para ${round} -> Piso min 4t = ${final} tons`
+                                })()
                               : `Peso Base: ${chargeableWeight.toFixed(2)}`}
                         </TooltipContent>
                       </Tooltip>

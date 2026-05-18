@@ -10,6 +10,12 @@ export interface Pedido {
   largura?: number | null
   altura?: number | null
   quantidade_containers?: number | null
+  itens?: Array<{
+    comprimento: number
+    largura: number
+    altura: number
+    quantidade: number
+  }>
   tipo_mercadoria?: string
   modal_desejado: 'Aéreo' | 'FCL' | 'LCL'
   incoterm: string
