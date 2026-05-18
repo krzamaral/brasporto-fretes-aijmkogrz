@@ -171,6 +171,7 @@ export default function Upload() {
 
   const [autoDetectedIncoterm, setAutoDetectedIncoterm] = useState(false)
   const [autoDetectedOrigem, setAutoDetectedOrigem] = useState(false)
+  const [autoDetectedDestino, setAutoDetectedDestino] = useState(false)
   const [reviewQuotes, setReviewQuotes] = useState<any[] | null>(null)
   const [reviewIncoterm, setReviewIncoterm] = useState<string>('')
   const [reviewIncotermDetected, setReviewIncotermDetected] = useState(false)
@@ -307,6 +308,7 @@ export default function Upload() {
       ].includes(extracted?.incoterm)
 
       const hasExtractedOrigem = !!extracted?.origem
+      const hasExtractedDestino = !!extracted?.destino
 
       form.reset({
         origem: extracted?.origem || '',
@@ -328,6 +330,7 @@ export default function Upload() {
 
       setAutoDetectedIncoterm(hasExtractedIncoterm)
       setAutoDetectedOrigem(hasExtractedOrigem)
+      setAutoDetectedDestino(hasExtractedDestino)
       setStatus('form')
       toast({ title: 'Dados extraídos', description: 'Revise os dados do pedido abaixo.' })
     } catch (err: any) {
@@ -864,14 +867,27 @@ export default function Upload() {
                   name="destino"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Destino</FormLabel>
+                      <FormLabel className="flex items-center gap-2">
+                        Destino
+                        {autoDetectedDestino && (
+                          <span className="bg-blue-100 text-blue-700 text-[10px] px-2 py-0.5 rounded-full font-medium flex items-center gap-1 border border-blue-200">
+                            Formatado IA
+                          </span>
+                        )}
+                      </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
+                          onChange={(e) => {
+                            field.onChange(e)
+                            setAutoDetectedDestino(false)
+                          }}
                           className={
-                            !field.value
-                              ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
-                              : ''
+                            autoDetectedDestino
+                              ? 'border-blue-400 ring-1 ring-blue-200'
+                              : !field.value
+                                ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
+                                : ''
                           }
                         />
                       </FormControl>

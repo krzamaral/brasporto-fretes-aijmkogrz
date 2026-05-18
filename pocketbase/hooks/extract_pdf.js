@@ -11,74 +11,83 @@ routerAdd(
   (e) => {
     e.response.header().set('Access-Control-Allow-Origin', '*')
 
-    const body = e.requestInfo().body || {}
-    const text = body.text
-    const step = body.step
-    const docType = body.docType
-
-    if (!text) {
-      throw new BadRequestError('Texto do documento ausente.')
+    const body = e.requestInfo().body
+    if (!body || !body.text) {
+      throw new BadRequestError('Texto ausente na requisição.')
     }
 
-    const apiKey = $secrets.get('OPENAI_API_KEY') || ''
+    const apiKey = $secrets.get('OPENAI_API_KEY')
     if (!apiKey) {
       throw new InternalServerError('OPENAI_API_KEY não configurada.')
     }
 
+    const docType = body.docType || 'pedido'
     let prompt = ''
 
-    if (step === 1 || docType === 'pedido') {
-      prompt = `Você é um especialista em logística internacional.
-Sua tarefa é extrair as seguintes informações a partir do texto do documento de solicitação de cotação de frete (Booking/Pedido) e retornar EXCLUSIVAMENTE em formato JSON.
-
-Regras de Extração e Formatação:
-1. origem: Extraia a origem da carga. OBRIGATÓRIO: Formatar APENAS no padrão estrito "Cidade, País". Remova completamente endereços de rua, números, bairros, códigos postais ou CEPs. Apenas o nome da cidade e do país devem ser retornados. Exemplos corretos: "Shanghai, China", "Santos, Brasil", "Miami, USA".
-2. destino: Extraia o destino.
-3. peso_bruto: Peso bruto total em kg (apenas número, ou null se não houver).
-4. volume: Volume total em metros cúbicos (CBM) (apenas número, ou null).
-5. quantidade_containers: Se houver indicação de contêiner (ex: 2x40HC), extraia a quantidade (apenas número, ou null).
-6. tipo_mercadoria: Descrição do tipo de carga (Commodity). IMPORTANTE: Só preencha se estiver EXPLICITAMENTE declarado no documento. Não invente, não deduza e não use valores padrão genéricos. Se não encontrar, retorne null.
-7. modal_desejado: Deve ser estritamente "Aéreo", "FCL" ou "LCL". Inferir pelo texto (ex: se mencionar containers, é FCL; se mencionar CBM sem container, LCL; se mencionar Air, Aéreo).
-8. incoterm: Identifique automaticamente o Incoterm mencionado. Você DEVE mapeá-lo para UM DESTES valores estritos: EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR, CIF. Se não conseguir identificar claramente, retorne null.
-9. prazo_desejado_dias: Prazo transit time desejado em dias (apenas número, ou null).
-
-TEXTO PARA ANÁLISE:
-"""
-${text}
-"""
-`
+    if (docType === 'pedido') {
+      prompt =
+        'Você é um especialista em logística e extração de dados.\n' +
+        'Extraia as seguintes informações logísticas do texto abaixo:\n\n' +
+        '- Origem: Formato obrigatório "Cidade, País" (ex: "São Paulo, Brasil").\n' +
+        '- Destino: Apenas o nome do Porto ou Aeroporto (sem endereço completo, sem ruas, sem CEP. Ex: "GRU - Aeroporto de Guarulhos" ou "Porto de Santos").\n' +
+        '- Peso Bruto: Numérico, em kg.\n' +
+        '- Volume: Numérico, em m³. Se o texto listar apenas dimensões (ex: 2m x 1m x 1.5m ou comprimento, largura e altura), você DEVE calcular o volume multiplicando as dimensões e retornar o resultado em m³. Se não houver volume nem dimensões, retorne null. NÃO INVENTE VALORES.\n' +
+        '- Quantidade de Containers: Numérico, ou null.\n' +
+        '- Tipo de Mercadoria: Texto descritivo curto.\n' +
+        '- Modal Desejado: Deve ser "Aéreo", "FCL" ou "LCL".\n' +
+        '- Incoterm: EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR ou CIF.\n' +
+        '- Prazo Desejado: Numérico em dias, ou null.\n\n' +
+        'Retorne APENAS um JSON válido no seguinte formato, sem markdown:\n' +
+        '{\n' +
+        '  "origem": "string",\n' +
+        '  "destino": "string",\n' +
+        '  "peso_bruto": 123.4,\n' +
+        '  "volume": 12.3,\n' +
+        '  "quantidade_containers": 1,\n' +
+        '  "tipo_mercadoria": "string",\n' +
+        '  "modal_desejado": "Aéreo",\n' +
+        '  "incoterm": "FOB",\n' +
+        '  "prazo_desejado_dias": 30\n' +
+        '}\n\n' +
+        'TEXTO:\n' +
+        body.text
     } else {
-      prompt = `Você é um especialista em logística internacional.
-Sua tarefa é extrair as cotações concorrentes presentes no documento e retornar EXCLUSIVAMENTE um objeto JSON contendo um array chamado "quotations".
-
-Para cada cotação encontrada no array "quotations", extraia:
-- agent_name: Nome do agente de cargas ou armador fornecendo a cotação.
-- modal: "Aéreo", "FCL" ou "LCL".
-- cost: Custo total em Dólar (USD). (apenas número float).
-- transit_time: Transit time em dias (apenas número, ou null).
-- free_time: Free time de Demurrage/Detention em dias (apenas número, ou null).
-- taxable_weight: Peso taxado / Chargeable weight em kg (apenas número, ou null).
-- etd: Estimated Time of Departure em formato YYYY-MM-DD (ou null).
-- incoterm: O Incoterm associado à cotação, devendo ser estritamente mapeado para um destes: EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR, CIF. (ou null se não aplicável/não encontrado).
-
-TEXTO PARA ANÁLISE:
-"""
-${text}
-"""
-`
+      prompt =
+        'Você é um especialista em extração de dados logísticos.\n' +
+        'Extraia as cotações concorrentes do texto abaixo. Pode haver várias cotações no mesmo documento.\n\n' +
+        'Para cada cotação, extraia:\n' +
+        '- agent_name: Nome da empresa ou agente de carga.\n' +
+        '- modal: "Aéreo", "FCL" ou "LCL".\n' +
+        '- cost: Numérico, custo total da cotação em USD.\n' +
+        '- transit_time: Numérico, prazo de trânsito em dias.\n' +
+        '- etd: Data prevista de partida no formato YYYY-MM-DD, ou null.\n' +
+        '- free_time: Numérico, dias livres, ou null.\n' +
+        '- taxable_weight: Numérico, peso taxável em kg, ou null.\n' +
+        '- incoterm: O incoterm utilizado na cotação (ex: FOB, EXW), ou null.\n\n' +
+        'Retorne APENAS um JSON válido no seguinte formato, sem markdown:\n' +
+        '{\n' +
+        '  "type": "multiple",\n' +
+        '  "quotations": [\n' +
+        '    {\n' +
+        '      "agent_name": "string",\n' +
+        '      "modal": "Aéreo",\n' +
+        '      "cost": 123.4,\n' +
+        '      "transit_time": 10,\n' +
+        '      "etd": "2024-12-01",\n' +
+        '      "free_time": 5,\n' +
+        '      "taxable_weight": 1500.0,\n' +
+        '      "incoterm": "FOB"\n' +
+        '    }\n' +
+        '  ]\n' +
+        '}\n\n' +
+        'TEXTO:\n' +
+        body.text
     }
 
     const aiBody = {
       model: 'gpt-4o',
       response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content:
-            'Você é um assistente de IA focado em extração de dados logísticos. Sempre retorne a resposta estritamente no formato JSON solicitado.',
-        },
-        { role: 'user', content: prompt },
-      ],
+      messages: [{ role: 'user', content: prompt }],
     }
 
     const res = $http.send({
@@ -92,23 +101,19 @@ ${text}
       timeout: 60,
     })
 
-    if (res.statusCode >= 400) {
-      $app
-        .logger()
-        .error('Erro na API da OpenAI', 'status', res.statusCode, 'body', res.json || res.body)
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      $app.logger().error('OpenAI Error', 'status', res.statusCode, 'body', res.json || res.body)
       throw new BadRequestError('Falha ao processar o documento com a IA.')
     }
 
-    let parsedData = {}
     try {
-      const content = res.json.choices[0].message.content
-      parsedData = JSON.parse(content)
+      const jsonStr = res.json.choices[0].message.content
+      const data = JSON.parse(jsonStr)
+      return e.json(200, { data })
     } catch (err) {
-      $app.logger().error('Erro no parse do JSON da IA', 'err', String(err))
-      throw new BadRequestError('Resposta inválida do serviço de IA.')
+      $app.logger().error('Parse Error', 'error', String(err))
+      throw new BadRequestError('A IA retornou um formato inválido.')
     }
-
-    return e.json(200, { data: parsedData })
   },
   $apis.requireAuth(),
 )
