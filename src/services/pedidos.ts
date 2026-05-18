@@ -9,6 +9,7 @@ export interface Pedido {
   quantidade_containers?: number | null
   tipo_mercadoria?: string
   modal_desejado: 'Aéreo' | 'FCL' | 'LCL'
+  incoterm: string
   prazo_desejado_dias?: number | null
   user_id: string
   status: 'aguardando_cotacao' | 'em_andamento' | 'concluido'

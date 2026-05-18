@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -55,6 +55,13 @@ const pedidoSchema = z
       .optional(),
     tipo_mercadoria: z.string().optional(),
     modal_desejado: z.enum(['Aéreo', 'FCL', 'LCL']),
+    incoterm: z.enum(
+      ['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF'],
+      {
+        required_error: 'Obrigatório',
+        invalid_type_error: 'Incoterm inválido',
+      },
+    ),
     prazo_desejado_dias: z
       .number({ invalid_type_error: 'Deve ser um número' })
       .nullable()
@@ -117,6 +124,7 @@ export default function Upload() {
       quantidade_containers: null,
       tipo_mercadoria: '',
       modal_desejado: 'Aéreo',
+      incoterm: undefined,
       prazo_desejado_dias: null,
     },
   })
@@ -248,6 +256,21 @@ export default function Upload() {
           modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted?.modal_desejado)
             ? extracted.modal_desejado
             : 'Aéreo',
+          incoterm: [
+            'EXW',
+            'FCA',
+            'CPT',
+            'CIP',
+            'DAP',
+            'DPU',
+            'DDP',
+            'FAS',
+            'FOB',
+            'CFR',
+            'CIF',
+          ].includes(extracted?.incoterm)
+            ? extracted.incoterm
+            : undefined,
           prazo_desejado_dias: extracted?.prazo_desejado_dias
             ? Number(extracted.prazo_desejado_dias)
             : null,
@@ -479,6 +502,7 @@ export default function Upload() {
         modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(data.modal_desejado)
           ? (data.modal_desejado as 'Aéreo' | 'FCL' | 'LCL')
           : 'Aéreo',
+        incoterm: data.incoterm,
         prazo_desejado_dias:
           data.prazo_desejado_dias !== null && data.prazo_desejado_dias !== undefined
             ? Number(data.prazo_desejado_dias)
@@ -527,6 +551,16 @@ export default function Upload() {
   const watchedModal = form.watch('modal_desejado')
   const watchedVolume = form.watch('volume')
   const watchedPeso = form.watch('peso_bruto')
+
+  useEffect(() => {
+    if (watchedModal === 'FCL') {
+      const currentQtd = form.getValues('quantidade_containers')
+      if (currentQtd === null || currentQtd === undefined || currentQtd <= 0) {
+        form.setValue('quantidade_containers', 1, { shouldValidate: true })
+      }
+    }
+  }, [watchedModal, form])
+
   const pesoCubado = (watchedVolume || 0) * 166.667
   const pesoTaxado = Math.max(watchedPeso || 0, pesoCubado)
 
@@ -673,6 +707,44 @@ export default function Upload() {
                           <SelectItem value="Aéreo">Aéreo</SelectItem>
                           <SelectItem value="FCL">FCL</SelectItem>
                           <SelectItem value="LCL">LCL</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="incoterm"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        INCOTERM <span className="text-red-500">*</span>
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecione o Incoterm" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {[
+                            'EXW',
+                            'FCA',
+                            'CPT',
+                            'CIP',
+                            'DAP',
+                            'DPU',
+                            'DDP',
+                            'FAS',
+                            'FOB',
+                            'CFR',
+                            'CIF',
+                          ].map((inc) => (
+                            <SelectItem key={inc} value={inc}>
+                              {inc}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />

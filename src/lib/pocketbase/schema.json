@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-18T13:32:09.484Z",
+  "generatedAt": "2026-05-18T13:40:30.291Z",
   "collections": [
     {
       "name": "users",
@@ -276,6 +276,25 @@
           "type": "number",
           "required": false,
           "system": false
+        },
+        {
+          "name": "incoterm",
+          "type": "select",
+          "required": true,
+          "system": false,
+          "selectValues": [
+            "EXW",
+            "FCA",
+            "CPT",
+            "CIP",
+            "DAP",
+            "DPU",
+            "DDP",
+            "FAS",
+            "FOB",
+            "CFR",
+            "CIF"
+          ]
         }
       ],
       "indexes": []
