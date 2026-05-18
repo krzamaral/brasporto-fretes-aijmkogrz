@@ -77,7 +77,8 @@ export default function History() {
                   <th className="px-4 py-3">Fornecedor Vencedor</th>
                   <th className="px-4 py-3 text-right">Custo Vencedor (US$)</th>
                   <th className="px-4 py-3 text-center">Score</th>
-                  <th className="px-4 py-3 rounded-tr-lg">Usuário</th>
+                  <th className="px-4 py-3">Usuário</th>
+                  <th className="px-4 py-3 rounded-tr-lg text-right print:hidden">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -121,6 +122,16 @@ export default function History() {
                     </td>
                     <td className="px-4 py-3 text-slate-600 truncate max-w-[150px]">
                       {pedido.expand?.user_id?.name || 'Sistema'}
+                    </td>
+                    <td className="px-4 py-3 text-right print:hidden">
+                      <div className="flex justify-end gap-2">
+                        <Button asChild variant="outline" size="sm">
+                          <Link to={`/history/${pedido.id}`}>Consultar</Link>
+                        </Button>
+                        <Button asChild variant="secondary" size="sm">
+                          <Link to={`/history/${pedido.id}?print=true`}>Imprimir/PDF</Link>
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
