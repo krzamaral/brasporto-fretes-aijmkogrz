@@ -134,9 +134,11 @@ export default function Ranking() {
   // Volumetric Weight for Air: Length(cm) x Width(cm) x Height(cm) / 6000
   // Since volume is in CBM (m³), 1 CBM = 1,000,000 cm³. So 1,000,000 / 6000 = 166.666...
   const volumetricWeightAir = (volume * 1000000) / 6000
+
+  // Taxable Weight Logic
   const chargeableWeight =
     pedido.modal_desejado === 'Aéreo'
-      ? Math.max(pesoBruto, volumetricWeightAir)
+      ? Math.ceil(Math.max(pesoBruto, volumetricWeightAir))
       : Math.max(pesoBruto / 1000, volume)
 
   const sortedQuots = [...quotations].sort((a, b) => getScore(b) - getScore(a))
@@ -158,8 +160,9 @@ export default function Ranking() {
     </th>
   )
 
-  const Td = ({ children, className }: any) => (
+  const Td = ({ children, className, title }: any) => (
     <td
+      title={title}
       className={cn('border border-slate-300 px-2 py-1 text-xs text-slate-800 bg-white', className)}
     >
       {children}
@@ -374,8 +377,8 @@ export default function Ranking() {
                   <Td>{pesoBruto.toFixed(2)} kg</Td>
                 </tr>
                 <tr>
-                  <LabelTd>Peso Cubado / Chargeable:</LabelTd>
-                  <Td>
+                  <LabelTd>Peso Taxável (Max):</LabelTd>
+                  <Td className="font-bold text-slate-800">
                     {Math.max(
                       ...quotations.map((q) => q.taxable_weight || 0),
                       chargeableWeight,
@@ -476,7 +479,7 @@ export default function Ranking() {
                 <Th rowSpan={2} className="w-[6%]">
                   MODAL
                 </Th>
-                <Th colSpan={4}>MEMÓRIA DE CÁLCULO (USD)</Th>
+                <Th colSpan={5}>MEMÓRIA DE CÁLCULO (USD)</Th>
                 <Th colSpan={3}>OPERAÇÃO</Th>
                 <Th colSpan={3}>VALIDAÇÃO (x LOGÍSTICA)</Th>
                 <Th rowSpan={2} className="w-[8%]">
@@ -489,9 +492,14 @@ export default function Ranking() {
               </tr>
               <tr>
                 <Th>
+                  Peso Taxável
+                  <br />
+                  (KG/CBM)
+                </Th>
+                <Th>
                   Unitário do Frete
                   <br />
-                  (USD/KG)
+                  (USD)
                 </Th>
                 <Th>
                   Total do Frete
@@ -501,7 +509,7 @@ export default function Ranking() {
                 <Th>
                   Despesas e Taxas
                   <br />
-                  de Origem
+                  de Origem (EXW)
                 </Th>
                 <Th className="bg-slate-200 text-slate-900">
                   Valor
@@ -549,6 +557,12 @@ export default function Ranking() {
                   ? `${q.agent_name} - ${q.option_description}`
                   : q.agent_name
 
+                const calcTaxable = q.taxable_weight ? q.taxable_weight : chargeableWeight
+                const freteUnitario = q.cost_breakdown?.frete_unitario || 0
+                const freteTotal = q.cost_breakdown?.frete_peso || freteUnitario * calcTaxable
+                const taxasOrigem =
+                  q.cost_breakdown?.taxas_origem || q.cost_breakdown?.origin_taxes || 0
+
                 return (
                   <tr key={q.id} className="hover:bg-slate-50 transition-colors">
                     <Td
@@ -558,26 +572,11 @@ export default function Ranking() {
                       {agentDisplayName}
                     </Td>
                     <Td>{q.modal}</Td>
-                    <Td>
-                      {q.cost_breakdown?.frete_unitario
-                        ? q.cost_breakdown.frete_unitario.toFixed(2)
-                        : '-'}
-                    </Td>
-                    <Td>
-                      {q.cost_breakdown?.frete_peso
-                        ? q.cost_breakdown.frete_peso.toFixed(2)
-                        : q.cost_breakdown?.freight
-                          ? q.cost_breakdown.freight.toFixed(2)
-                          : q.taxable_weight && q.cost_breakdown?.frete_unitario
-                            ? (q.taxable_weight * q.cost_breakdown.frete_unitario).toFixed(2)
-                            : '-'}
-                    </Td>
+                    <Td className="font-semibold text-slate-700">{calcTaxable.toFixed(2)}</Td>
+                    <Td>{freteUnitario > 0 ? freteUnitario.toFixed(2) : '-'}</Td>
+                    <Td>{freteTotal > 0 ? freteTotal.toFixed(2) : '-'}</Td>
                     <Td title={q.cost_breakdown?.formula_origem}>
-                      {q.cost_breakdown?.taxas_origem
-                        ? q.cost_breakdown.taxas_origem.toFixed(2)
-                        : q.cost_breakdown?.origin_taxes
-                          ? q.cost_breakdown.origin_taxes.toFixed(2)
-                          : '-'}
+                      {taxasOrigem > 0 ? taxasOrigem.toFixed(2) : '-'}
                     </Td>
                     <Td className="font-bold bg-slate-50 text-slate-900">{q.cost.toFixed(2)}</Td>
                     <Td>{q.transit_time ? `${q.transit_time} a ${q.transit_time + 1}` : '-'}</Td>
@@ -602,7 +601,7 @@ export default function Ranking() {
               {quotations.length === 0 && (
                 <tr>
                   <td
-                    colSpan={13}
+                    colSpan={14}
                     className="py-8 text-slate-500 border border-slate-300 bg-white text-sm"
                   >
                     Nenhuma cotação recebida para este pedido.
