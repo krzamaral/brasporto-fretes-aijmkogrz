@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useToast } from '@/hooks/use-toast'
 import { Stepper } from '@/components/Stepper'
 import { cn } from '@/lib/utils'
+import { useRealtime } from '@/hooks/use-realtime'
 
 export default function Ranking() {
   const location = useLocation()
@@ -20,37 +21,46 @@ export default function Ranking() {
   const [isAiLoading, setIsAiLoading] = useState(false)
   const [aiComment, setAiComment] = useState<string>('')
 
-  useEffect(() => {
-    async function loadData() {
-      const pedidoId = location.state?.pedidoId
-      if (!pedidoId) {
-        navigate('/dashboard')
-        return
-      }
-      try {
-        const [ped, quots] = await Promise.all([
-          getPedido(pedidoId),
-          getQuotationsByPedido(pedidoId),
-        ])
-        setPedido(ped)
-        setQuotations(quots)
-
-        if (quots.length > 0) {
-          const sorted = [...quots].sort((a, b) => getScore(b) - getScore(a))
-          const topOption = sorted[0]
-          const topAgentName = topOption.option_description
-            ? `${topOption.agent_name} - ${topOption.option_description}`
-            : topOption.agent_name
-          setAiComment(
-            `A opção ${topAgentName} é a recomendada por apresentar o melhor custo-benefício (US$ ${topOption.cost.toFixed(2)}) e score operacional de ${getScore(topOption).toFixed(2)}, garantindo atendimento ao destino de forma eficiente.`,
-          )
-        }
-      } catch (e) {
-        console.error(e)
-      }
+  const loadData = async () => {
+    const pedidoId = location.state?.pedidoId
+    if (!pedidoId) {
+      navigate('/dashboard')
+      return
     }
+    try {
+      const [ped, quots] = await Promise.all([getPedido(pedidoId), getQuotationsByPedido(pedidoId)])
+      setPedido(ped)
+      setQuotations(quots)
+
+      if (quots.length > 0) {
+        const sorted = [...quots].sort((a, b) => getScore(b) - getScore(a))
+        const topOption = sorted[0]
+        const topAgentName = topOption.option_description
+          ? `${topOption.agent_name} - ${topOption.option_description}`
+          : topOption.agent_name
+
+        setAiComment(
+          (prev) =>
+            prev ||
+            `A opção ${topAgentName} é a recomendada por apresentar o melhor custo-benefício (US$ ${topOption.cost.toFixed(2)}) e score operacional de ${getScore(topOption).toFixed(2)}, garantindo atendimento ao destino de forma eficiente.`,
+        )
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  useEffect(() => {
     loadData()
-  }, [location, navigate])
+  }, [location.state?.pedidoId, navigate])
+
+  useRealtime('quotations', () => {
+    loadData()
+  })
+
+  useRealtime('pedidos', () => {
+    loadData()
+  })
 
   const handleGenerateAiProposal = async () => {
     if (!pedido || quotations.length === 0) return
@@ -121,9 +131,12 @@ export default function Ranking() {
 
   const volume = pedido.volume || 0
   const pesoBruto = pedido.peso_bruto || 0
+  // Volumetric Weight for Air: Length(cm) x Width(cm) x Height(cm) / 6000
+  // Since volume is in CBM (m³), 1 CBM = 1,000,000 cm³. So 1,000,000 / 6000 = 166.666...
+  const volumetricWeightAir = (volume * 1000000) / 6000
   const chargeableWeight =
     pedido.modal_desejado === 'Aéreo'
-      ? Math.max(pesoBruto, volume * 167)
+      ? Math.max(pesoBruto, volumetricWeightAir)
       : Math.max(pesoBruto / 1000, volume)
 
   const sortedQuots = [...quotations].sort((a, b) => getScore(b) - getScore(a))
@@ -163,13 +176,14 @@ export default function Ranking() {
     <div className="min-h-screen bg-slate-50 p-2 md:p-6 pb-24 print:bg-white print:p-0">
       <style>{`
         @media print { 
-          @page { margin: 10mm; size: landscape; }
-          body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; }
+          @page { margin: 5mm; size: landscape; }
+          body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; background: white !important; zoom: 0.85; }
           .print-hidden { display: none !important; }
           .print\\:block { display: block !important; }
-          table { page-break-inside: auto; max-width: 100% !important; }
+          table { page-break-inside: auto; width: 100% !important; max-width: 100% !important; table-layout: auto; }
           tr { page-break-inside: avoid; page-break-after: auto; }
           td, th { page-break-inside: avoid; }
+          * { overflow: visible !important; }
         }
       `}</style>
 
@@ -362,7 +376,10 @@ export default function Ranking() {
                 <tr>
                   <LabelTd>Peso Cubado / Chargeable:</LabelTd>
                   <Td>
-                    {chargeableWeight.toFixed(2)}{' '}
+                    {Math.max(
+                      ...quotations.map((q) => q.taxable_weight || 0),
+                      chargeableWeight,
+                    ).toFixed(2)}{' '}
                     {pedido.modal_desejado === 'Aéreo' ? 'kg' : 'ton/cbm'}
                   </Td>
                 </tr>
@@ -551,9 +568,11 @@ export default function Ranking() {
                         ? q.cost_breakdown.frete_peso.toFixed(2)
                         : q.cost_breakdown?.freight
                           ? q.cost_breakdown.freight.toFixed(2)
-                          : '-'}
+                          : q.taxable_weight && q.cost_breakdown?.frete_unitario
+                            ? (q.taxable_weight * q.cost_breakdown.frete_unitario).toFixed(2)
+                            : '-'}
                     </Td>
-                    <Td>
+                    <Td title={q.cost_breakdown?.formula_origem}>
                       {q.cost_breakdown?.taxas_origem
                         ? q.cost_breakdown.taxas_origem.toFixed(2)
                         : q.cost_breakdown?.origin_taxes

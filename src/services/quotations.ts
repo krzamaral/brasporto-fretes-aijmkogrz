@@ -12,6 +12,7 @@ export interface Quotation {
     frete_unitario?: number
     frete_peso?: number
     taxas_origem?: number
+    formula_origem?: string
   }
   option_description?: string
   transit_time?: number
