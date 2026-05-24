@@ -39,18 +39,35 @@ routerAdd(
       responseFormat = { type: 'json_object' }
     } else if (body.docType === 'cotacao') {
       prompt = `Você é um assistente especializado em logística. Extraia as informações do seguinte e-mail ou PDF de cotação (resposta do agente).
-    ATENÇÃO: Extraia os custos e taxas do agente. Se houver divergência nas dimensões da carga em relação ao pedido original da Brasporto, apenas registre as taxas financeiras e prazos da cotação.
-    
+    ATENÇÃO CRÍTICA:
+    1. Granularidade: Uma linha de tabela ou oferta distinta (ex: diferentes faixas de peso como +100kg, +300kg, ou diferentes rotas/carriers) deve ser UM objeto de cotação distinto. NUNCA agregue múltiplas opções num só objeto.
+    2. Sem Cálculos: NUNCA calcule custos totais. Retorne cost: null.
+    3. Unit Rates: Extraia frete_unitario como número e currency (padrão "USD").
+    4. Weight Breaks: Regras como "+100" ou "MIN" devem ir para weight_break (string). Não coloque textos em taxable_weight.
+    5. Origem/EXW: Use formula_origem (string) para fórmulas baseadas em peso e taxas_origem (number) para valores fixos.
+    6. Pickup/Adicionais: Extraia pickup_options como array de { local: string, valor: number } e taxas_adicionais como array de { tipo, valor, minimo, descricao, condicional }.
+    7. Transit Time: Extraia transit_time_min e transit_time_max (numbers).
+
     Retorne um JSON com a chave "quotations" contendo um array de objetos. Cada objeto deve ter:
-    - agent_name: string
+    - agent_name: string (nome do agente)
+    - carrier: string (companhia aérea/marítima, se houver)
+    - pol: string (Port/Airport of Loading)
+    - pod: string (Port/Airport of Discharge)
     - modal: string ("Aéreo", "FCL" ou "LCL")
-    - cost: number (custo total ALL-IN)
-    - transit_time: number (em dias)
+    - cost: null
+    - transit_time_min: number (em dias)
+    - transit_time_max: number (em dias)
     - free_time: number (em dias)
-    - taxable_weight: number (em kg ou ton/m³)
+    - taxable_weight: number (apenas se for um valor numérico exato extraído do documento)
+    - weight_break: string (ex: "+100", "+300", "MIN")
     - etd: string (formato YYYY-MM-DD)
     - incoterm: string (ex: "EXW", "FCA", etc.)
-    - cost_breakdown: objeto com { frete_unitario: number, taxas_origem: number, pickup_fee: number, destination_taxes: number, taxas_adicionais: array de { tipo: "por_embarque" ou "por_kg", valor: number, descricao: string } }
+    - frete_unitario: number
+    - currency: string
+    - formula_origem: string
+    - taxas_origem: number
+    - pickup_options: array de { local, valor }
+    - taxas_adicionais: array de { tipo, valor, minimo, descricao, condicional }
 
     Texto do documento:
     """
@@ -64,6 +81,7 @@ routerAdd(
 
     const aiBody = {
       model: 'gpt-4o',
+      temperature: 0,
       response_format: responseFormat,
       messages: [{ role: 'user', content: prompt }],
     }
