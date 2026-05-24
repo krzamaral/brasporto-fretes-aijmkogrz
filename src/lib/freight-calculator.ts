@@ -261,6 +261,40 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
 
     let pickupFee = q.cost_breakdown?.pickup_fee || 0
 
+    if (
+      !pickupFee &&
+      q.cost_breakdown?.pickup_options &&
+      Array.isArray(q.cost_breakdown.pickup_options) &&
+      q.cost_breakdown?.pol
+    ) {
+      const iataToCity: Record<string, string> = {
+        PEK: 'PEKING',
+        PVG: 'SHANGHAI',
+        SHA: 'SHANGHAI',
+        CAN: 'GUANGZHOU',
+        SZX: 'SHENZHEN',
+        EHU: 'EZHOU',
+        XMN: 'XIAMEN',
+        CTU: 'CHENGDU',
+        HGH: 'HANGZHOU',
+        NKG: 'NANJING',
+        TAO: 'QINGDAO',
+        DLC: 'DALIAN',
+      }
+
+      const pol = String(q.cost_breakdown.pol).toUpperCase().trim()
+      const mappedCity = iataToCity[pol] || pol
+
+      const matchedOption = q.cost_breakdown.pickup_options.find((opt: any) => {
+        const local = opt.local ? String(opt.local).toUpperCase().trim() : ''
+        return local === mappedCity
+      })
+
+      if (matchedOption && matchedOption.valor !== undefined && matchedOption.valor !== null) {
+        pickupFee = Number(matchedOption.valor)
+      }
+    }
+
     let additionalTaxes = 0
     let addTaxesLog: string[] = []
     if (q.cost_breakdown?.taxas_adicionais && Array.isArray(q.cost_breakdown.taxas_adicionais)) {
