@@ -536,17 +536,31 @@ export default function Upload() {
       const createdQuotes = []
       for (const q of reviewQuotes || []) {
         const modal = ['Aéreo', 'FCL', 'LCL'].includes(q?.modal) ? q.modal : 'Aéreo'
+
+        let formattedAgentName = q?.agent_name || 'Desconhecido'
+        if (q?.carrier || q?.pol) {
+          const suffix = [q?.carrier, q?.pol].filter(Boolean).join(' ')
+          if (suffix) {
+            formattedAgentName = `${formattedAgentName} (${suffix})`
+          }
+        }
+
         const mappedQ = {
-          agent_name: q?.agent_name || 'Desconhecido',
+          agent_name: formattedAgentName,
           modal,
-          cost: Number(q?.cost) || 0,
-          transit_time: q?.transit_time ? Number(q.transit_time) : undefined,
+          cost: 0,
+          transit_time: q?.transit_time_max
+            ? Number(q.transit_time_max)
+            : q?.transit_time
+              ? Number(q.transit_time)
+              : undefined,
           free_time: q?.free_time ? Number(q.free_time) : undefined,
           taxable_weight: q?.taxable_weight ? Number(q.taxable_weight) : undefined,
           etd: q?.etd || undefined,
           cotacao_round_id: round.id,
           pedido_id: pedidoId,
           user_id: user!.id,
+          cost_breakdown: q,
         }
 
         if (mappedQ.etd) {
@@ -756,7 +770,7 @@ export default function Upload() {
             <h3 className="text-xl font-semibold text-slate-800">Revisar Cotações e Coerência</h3>
             <p className="text-slate-500 text-sm">
               Verifique as cotações extraídas e a coerência com o Incoterm selecionado antes de
-              salvar.
+              salvar. {reviewQuotes?.length || 0} cotação(ões) extraída(s) deste lote.
             </p>
           </div>
 
@@ -812,27 +826,86 @@ export default function Upload() {
           <div className="space-y-4">
             {reviewQuotes?.map((q, idx) => {
               const warnings = validateIncotermCoherence(reviewIncoterm, q)
+              const currency = q.currency || 'USD'
+              const freteUnitario = Number(q.frete_unitario) || 0
+              const ttMin = q.transit_time_min
+              const ttMax = q.transit_time_max
+              let ttDisplay =
+                ttMin && ttMax
+                  ? `${ttMin}-${ttMax} dias`
+                  : (ttMin || ttMax || q.transit_time || 'N/A') +
+                    (ttMin || ttMax || q.transit_time ? ' dias' : '')
+
+              const pickupCount = Array.isArray(q.pickup_options) ? q.pickup_options.length : 0
+              const adicCount = Array.isArray(q.taxas_adicionais) ? q.taxas_adicionais.length : 0
+
+              const origemDisplay =
+                q.formula_origem || (q.taxas_origem ? `${currency} ${q.taxas_origem}` : 'N/A')
+
               return (
-                <Card key={idx} className="p-5 border-slate-200 bg-white shadow-sm">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <h4 className="font-semibold text-slate-800">
-                        {q.agent_name || 'Agente Desconhecido'}
+                <Card
+                  key={idx}
+                  className="p-5 border-slate-200 bg-white shadow-sm flex flex-col gap-4"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex flex-col gap-1">
+                      <h4 className="font-semibold text-slate-800 text-lg leading-tight">
+                        {q.carrier || q.agent_name || 'Agente Desconhecido'}
                       </h4>
-                      <p className="text-sm text-slate-500">Modal: {q.modal || 'Aéreo'}</p>
+                      <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
+                        <span>
+                          {q.pol || 'Origem'} &rarr; {q.pod || 'Destino'}
+                        </span>
+                        {q.weight_break && (
+                          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs">
+                            {q.weight_break}
+                          </span>
+                        )}
+                        {q.modal && (
+                          <span className="bg-primary/10 text-primary px-2 py-0.5 rounded text-xs">
+                            {q.modal}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="text-right">
-                      <span className="text-lg font-bold text-slate-800">
-                        {new Intl.NumberFormat('en-US', {
-                          style: 'currency',
-                          currency: 'USD',
-                        }).format(Number(q.cost) || 0)}
+                      <div className="text-sm text-slate-500 mb-0.5">Rate</div>
+                      <span className="text-xl font-bold text-slate-800">
+                        {currency} {freteUnitario.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 py-3 border-y border-slate-100">
+                    <div className="flex flex-col">
+                      <span className="text-xs text-slate-400">Transit Time</span>
+                      <span className="text-sm font-medium text-slate-700">{ttDisplay}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-slate-400">Origem / EXW</span>
+                      <span
+                        className="text-sm font-medium text-slate-700 truncate"
+                        title={origemDisplay}
+                      >
+                        {origemDisplay}
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-slate-400">Opções Pickup</span>
+                      <span className="text-sm font-medium text-slate-700">
+                        {pickupCount} encontrada(s)
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-slate-400">Taxas Adicionais</span>
+                      <span className="text-sm font-medium text-slate-700">
+                        {adicCount} extraída(s)
                       </span>
                     </div>
                   </div>
 
                   {warnings && warnings.length > 0 && (
-                    <div className="mt-4 space-y-2">
+                    <div className="space-y-2">
                       {warnings.map((w, wIdx) => (
                         <div
                           key={wIdx}
