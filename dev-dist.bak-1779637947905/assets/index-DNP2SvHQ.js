@@ -39423,12 +39423,9 @@ var RealtimeService = class extends BaseService {
   initConnect() {
     ;(this.disconnect(!0),
       clearTimeout(this.connectTimeoutId),
-      (this.connectTimeoutId = setTimeout(
-        () => {
-          this.connectErrorHandler(/* @__PURE__ */ new Error('EventSource connect took too long.'))
-        },
-        this.maxConnectTimeout,
-      )),
+      (this.connectTimeoutId = setTimeout(() => {
+        this.connectErrorHandler(/* @__PURE__ */ new Error('EventSource connect took too long.'))
+      }, this.maxConnectTimeout)),
       (this.eventSource = new EventSource(this.client.buildURL('/api/realtime'))),
       (this.eventSource.onerror = (e) => {
         this.connectErrorHandler(
@@ -39472,12 +39469,9 @@ var RealtimeService = class extends BaseService {
       this.predefinedReconnectIntervals[this.reconnectAttempts] ||
       this.predefinedReconnectIntervals[this.predefinedReconnectIntervals.length - 1]
     ;(this.reconnectAttempts++,
-      (this.reconnectTimeoutId = setTimeout(
-        () => {
-          this.initConnect()
-        },
-        t,
-      )))
+      (this.reconnectTimeoutId = setTimeout(() => {
+        this.initConnect()
+      }, t)))
   }
   disconnect(e = !1) {
     if (
