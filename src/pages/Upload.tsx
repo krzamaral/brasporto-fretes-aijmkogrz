@@ -478,12 +478,22 @@ export default function Upload() {
           }
         }
 
-        if (sharedFormulaOrigem || sharedPickupOptions) {
+        const isMultiQuote = quotes.length > 1
+        const zeroOriginCount = quotes.filter(
+          (q: any) =>
+            q.taxas_origem === undefined || q.taxas_origem === null || Number(q.taxas_origem) === 0,
+        ).length
+        const originViaFormula = isMultiQuote && zeroOriginCount >= quotes.length / 2
+
+        if (sharedFormulaOrigem || sharedPickupOptions || originViaFormula) {
           quotes = quotes.map((q: any) => {
             const updatedQ = { ...q }
 
             if (sharedFormulaOrigem && !updatedQ.formula_origem) {
               updatedQ.formula_origem = sharedFormulaOrigem
+            }
+
+            if (originViaFormula) {
               if (
                 updatedQ.taxas_origem !== undefined &&
                 updatedQ.taxas_origem !== null &&
