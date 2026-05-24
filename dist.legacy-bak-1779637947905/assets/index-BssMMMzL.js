@@ -19509,12 +19509,9 @@ var wd = class extends vd {
     initConnect() {
       ;(this.disconnect(!0),
         clearTimeout(this.connectTimeoutId),
-        (this.connectTimeoutId = setTimeout(
-          () => {
-            this.connectErrorHandler(Error(`EventSource connect took too long.`))
-          },
-          this.maxConnectTimeout,
-        )),
+        (this.connectTimeoutId = setTimeout(() => {
+          this.connectErrorHandler(Error(`EventSource connect took too long.`))
+        }, this.maxConnectTimeout)),
         (this.eventSource = new EventSource(this.client.buildURL(`/api/realtime`))),
         (this.eventSource.onerror = (e) => {
           this.connectErrorHandler(Error(`Failed to establish realtime connection.`))
@@ -19556,12 +19553,9 @@ var wd = class extends vd {
         this.predefinedReconnectIntervals[this.reconnectAttempts] ||
         this.predefinedReconnectIntervals[this.predefinedReconnectIntervals.length - 1]
       ;(this.reconnectAttempts++,
-        (this.reconnectTimeoutId = setTimeout(
-          () => {
-            this.initConnect()
-          },
-          t,
-        )))
+        (this.reconnectTimeoutId = setTimeout(() => {
+          this.initConnect()
+        }, t)))
     }
     disconnect(e = !1) {
       if (
@@ -20032,14 +20026,12 @@ var Dd = class extends Td {
       )
   }
   async unlinkExternalAuth(e, t, n) {
-    let r = await this.client
-      .collection(`_externalAuths`)
-      .getFirstListItem(
-        this.client.filter(`recordRef = {:recordId} && provider = {:provider}`, {
-          recordId: e,
-          provider: t,
-        }),
-      )
+    let r = await this.client.collection(`_externalAuths`).getFirstListItem(
+      this.client.filter(`recordRef = {:recordId} && provider = {:provider}`, {
+        recordId: e,
+        provider: t,
+      }),
+    )
     return this.client
       .collection(`_externalAuths`)
       .delete(r.id, n)
@@ -40185,14 +40177,12 @@ var kN = class e {
       let e = `GetMetadata`,
         t = this.#e.get(e)
       if (t) return t
-      let n = this.messageHandler
-        .sendWithPromise(e, null)
-        .then((e) => ({
-          info: e[0],
-          metadata: e[1] ? new IM(e[1]) : null,
-          contentDispositionFilename: this._fullReader?.filename ?? null,
-          contentLength: this._fullReader?.contentLength ?? null,
-        }))
+      let n = this.messageHandler.sendWithPromise(e, null).then((e) => ({
+        info: e[0],
+        metadata: e[1] ? new IM(e[1]) : null,
+        contentDispositionFilename: this._fullReader?.filename ?? null,
+        contentLength: this._fullReader?.contentLength ?? null,
+      }))
       return (this.#e.set(e, n), n)
     }
     getMarkInfo() {

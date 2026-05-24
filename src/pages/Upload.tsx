@@ -522,6 +522,47 @@ export default function Upload() {
           })
         }
 
+        const iataToCity: Record<string, string> = {
+          PEK: 'PEKING',
+          PVG: 'SHANGHAI',
+          SHA: 'SHANGHAI',
+          CAN: 'GUANGZHOU',
+          SZX: 'SHENZHEN',
+          EHU: 'EZHOU',
+          XMN: 'XIAMEN',
+          CTU: 'CHENGDU',
+          HGH: 'HANGZHOU',
+          NKG: 'NANJING',
+          TAO: 'QINGDAO',
+          DLC: 'DALIAN',
+        }
+
+        quotes = quotes.map((q: any) => {
+          const updatedQ = { ...q }
+
+          if (
+            (!updatedQ.pickup_fee || Number(updatedQ.pickup_fee) === 0) &&
+            updatedQ.pol &&
+            Array.isArray(updatedQ.pickup_options) &&
+            updatedQ.pickup_options.length > 0
+          ) {
+            const polCode = updatedQ.pol.toUpperCase().trim()
+            const cityName = iataToCity[polCode]
+
+            if (cityName) {
+              const matchedOption = updatedQ.pickup_options.find(
+                (opt: any) => opt.local && opt.local.toUpperCase().trim() === cityName,
+              )
+
+              if (matchedOption && matchedOption.valor !== undefined) {
+                updatedQ.pickup_fee = Number(matchedOption.valor)
+              }
+            }
+          }
+
+          return updatedQ
+        })
+
         setQuoteFiles((prev) =>
           prev.map((p) => (p.id === uf.id ? { ...p, status: 'success', quotes } : p)),
         )
