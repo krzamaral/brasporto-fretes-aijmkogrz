@@ -222,9 +222,9 @@ export default function Review() {
         ).id
 
       const promises = data.quotes.map((q, idx) => {
-        const preview = previewData[idx]
-        const finalScore = preview.calculatedScore
-        const compat = preview.compatScore * 100
+        const preview = previewData.find((p) => p.id === `preview-${idx}`)
+        const finalScore = preview?.calculatedScore || 0
+        const compat = (preview?.compatScore || 0) * 100
 
         const updatedBreakdown = {
           ...q.cost_breakdown,
@@ -244,7 +244,7 @@ export default function Review() {
         return createQuotation({
           agent_name: q.agent_name,
           modal: q.modal,
-          cost: preview.computedTotal,
+          cost: preview?.computedTotal || 0,
           transit_time: q.transit_time ?? undefined,
           free_time: q.free_time ?? undefined,
           etd: q.etd ?? undefined,
@@ -387,7 +387,7 @@ export default function Review() {
                   ? 'Cotação 1 (Múltiplas)'
                   : 'Cotação 2'
               const modalValue = form.watch(`quotes.${index}.modal`)
-              const preview = previewData[index]
+              const preview = previewData.find((p) => p.id === `preview-${index}`)
 
               return (
                 <Card
