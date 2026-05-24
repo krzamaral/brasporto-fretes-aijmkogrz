@@ -24,6 +24,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
 import { getPedido, updatePedido, Pedido } from '@/services/pedidos'
+import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
 import { createCotacaoRound } from '@/services/cotacao_rounds'
 import { createQuotation, Quotation } from '@/services/quotations'
@@ -221,7 +222,7 @@ export default function Review() {
           await createCotacaoRound({ pedido_id: pedido.id, nome_round: 'cota2', user_id: user.id })
         ).id
 
-      const promises = data.quotes.map((q, idx) => {
+      const promises = data.quotes.map(async (q, idx) => {
         const preview = previewData.find((p) => p.id === `preview-${idx}`)
         const finalScore = preview?.calculatedScore || 0
         const compat = (preview?.compatScore || 0) * 100
@@ -241,7 +242,7 @@ export default function Review() {
           ],
         }
 
-        return createQuotation({
+        const createdQ = await createQuotation({
           agent_name: q.agent_name,
           modal: q.modal,
           cost: preview?.computedTotal || 0,
@@ -257,6 +258,17 @@ export default function Review() {
           user_id: user.id,
           cost_breakdown: updatedBreakdown,
         })
+
+        try {
+          await pb.collection('extracted_data').create({
+            quotation_id: createdQ.id,
+            raw_data: q.cost_breakdown || {},
+          })
+        } catch (err) {
+          console.error('Failed to save extracted data:', err)
+        }
+
+        return createdQ
       })
 
       await Promise.all(promises)
@@ -752,8 +764,8 @@ export default function Review() {
 
                             {preview.isIncompleteData && (
                               <div className="mt-3 text-xs font-semibold text-red-600 bg-red-100 p-2 rounded">
-                                Dados Incompletos: Faltam dimensões/peso para calcular o Custo
-                                Total.
+                                Dados Incompletos: Faltam tarifas ou dados essenciais para calcular
+                                o Custo Total.
                               </div>
                             )}
                           </div>
@@ -780,9 +792,7 @@ export default function Review() {
                 type="submit"
                 size="lg"
                 className="bg-blue-600 hover:bg-blue-700 text-white min-w-[200px]"
-                disabled={
-                  isSubmitting || fields.length === 0 || previewData.some((p) => p.isIncompleteData)
-                }
+                disabled={isSubmitting || fields.length === 0}
               >
                 {isSubmitting ? (
                   <>
@@ -796,8 +806,9 @@ export default function Review() {
               </Button>
             </div>
             {previewData.some((p) => p.isIncompleteData) && (
-              <p className="text-red-500 text-sm text-right mt-2 font-medium">
-                Corrija os dados incompletos para continuar.
+              <p className="text-amber-600 text-sm text-right mt-2 font-medium">
+                Algumas cotações estão com dados incompletos e não serão consideradas como melhores
+                opções.
               </p>
             )}
           </form>

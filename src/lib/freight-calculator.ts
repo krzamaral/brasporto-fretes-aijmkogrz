@@ -224,12 +224,13 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
           : q.taxable_weight || chargeableWeight
 
     let freteUnitario = q.cost_breakdown?.frete_unitario ?? q.rate_unitario ?? 0
-    if (freteUnitario === 0 && q.cost > 0 && qTaxable > 0 && !q.cost_breakdown?.frete_peso) {
-      freteUnitario = q.cost / qTaxable
-    }
 
-    let freteTotal =
-      q.cost_breakdown?.frete_peso ?? (freteUnitario > 0 ? freteUnitario * qTaxable : q.cost)
+    let freteTotal = q.cost_breakdown?.frete_peso ?? freteUnitario * qTaxable
+
+    if (freteTotal === 0 || isNaN(freteTotal)) {
+      isIncompleteData = true
+      freteTotal = 0
+    }
 
     const isEXW = pedido.incoterm === 'EXW'
 
@@ -291,8 +292,6 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
 
     if (isIncompleteData) {
       computedTotal = 0
-    } else if (computedTotal === 0 && q.cost > 0) {
-      computedTotal = q.cost
     }
 
     const compatScore = calculateCompatibility(q, pedido)
@@ -375,7 +374,7 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
 
       let justificativa = ''
       if (q.isIncompleteData) {
-        justificativa = `Dados Incompletos: Não foi possível calcular o custo total devido à falta de peso, dimensões ou peso taxável na extração.`
+        justificativa = `Dados Incompletos: Não foi possível calcular o custo total devido à falta de tarifas, peso ou dimensões na extração.`
       } else {
         if (q.isBestBalance && q !== cheapest) {
           justificativa = `🏆 Opção Recomendada (Best Balance): Transit time ${(((cheapest.transit_time! - q.transit_time!) / cheapest.transit_time!) * 100).toFixed(0)}% menor com custo apenas ${(((q.computedTotal - cheapest.computedTotal) / cheapest.computedTotal) * 100).toFixed(0)}% maior que a mais barata.\n\n`

@@ -527,13 +527,7 @@ export default function Upload() {
         setPedidoIncoterm(reviewIncoterm)
       }
 
-      const round = await createCotacaoRound({
-        pedido_id: pedidoId,
-        nome_round: 'cota1',
-        user_id: user!.id,
-      })
-
-      const createdQuotes = []
+      const extractedQuotesToPass = []
       for (const q of reviewQuotes || []) {
         const modal = ['Aéreo', 'FCL', 'LCL'].includes(q?.modal) ? q.modal : 'Aéreo'
 
@@ -557,9 +551,6 @@ export default function Upload() {
           free_time: q?.free_time ? Number(q.free_time) : undefined,
           taxable_weight: q?.taxable_weight ? Number(q.taxable_weight) : undefined,
           etd: q?.etd || undefined,
-          cotacao_round_id: round.id,
-          pedido_id: pedidoId,
-          user_id: user!.id,
           cost_breakdown: q,
         }
 
@@ -572,25 +563,17 @@ export default function Upload() {
           }
         }
 
-        const createdQ = await createQuotation(mappedQ)
-        createdQuotes.push(createdQ)
-
-        try {
-          await pb.collection('extracted_data').create({
-            quotation_id: createdQ.id,
-            raw_data: q || {},
-          })
-        } catch (err: any) {
-          console.error('Failed to save extracted data:', err)
-        }
+        extractedQuotesToPass.push(mappedQ)
       }
 
       toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
-      navigate('/review', { state: { pedidoId, cota1Quotes: createdQuotes, cota2Quote: null } })
+      navigate('/review', {
+        state: { pedidoId, cota1Quotes: extractedQuotesToPass, cota2Quote: null },
+      })
     } catch (err: any) {
       console.error(err)
       setStatus('error')
-      setErrorMessage('Falha ao salvar as cotações revisadas.')
+      setErrorMessage('Falha ao avançar para a revisão.')
     }
   }
 
