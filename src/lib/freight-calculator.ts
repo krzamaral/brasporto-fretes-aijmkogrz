@@ -265,6 +265,7 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
     let addTaxesLog: string[] = []
     if (q.cost_breakdown?.taxas_adicionais && Array.isArray(q.cost_breakdown.taxas_adicionais)) {
       q.cost_breakdown.taxas_adicionais.forEach((taxa) => {
+        if (taxa.condicional) return
         if (taxa.tipo === 'por_embarque') {
           additionalTaxes += taxa.valor
           addTaxesLog.push(

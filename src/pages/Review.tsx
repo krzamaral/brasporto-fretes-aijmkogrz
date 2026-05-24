@@ -23,6 +23,21 @@ import {
 } from '@/components/ui/form'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/hooks/use-auth'
+const IATA_MAP: Record<string, string> = {
+  PEK: 'PEKING',
+  PVG: 'SHANGHAI',
+  SHA: 'SHANGHAI',
+  CAN: 'GUANGZHOU',
+  SZX: 'SHENZHEN',
+  EHU: 'EZHOU',
+  XMN: 'XIAMEN',
+  CTU: 'CHENGDU',
+  HGH: 'HANGZHOU',
+  NKG: 'NANJING',
+  TAO: 'QINGDAO',
+  DLC: 'DALIAN',
+}
+
 import { getPedido, updatePedido, Pedido } from '@/services/pedidos'
 import pb from '@/lib/pocketbase/client'
 import { useRealtime } from '@/hooks/use-realtime'
@@ -163,15 +178,46 @@ export default function Review() {
             const breakdown = q.cost_breakdown || {}
             const unit_rate = Number(breakdown.frete_unitario ?? q.unit_rate ?? null)
             const taxas_origem = Number(breakdown.taxas_origem ?? breakdown.origin_taxes ?? null)
-            const pickup_fee = Number(breakdown.pickup_fee ?? null)
+            let pickup_fee = Number(breakdown.pickup_fee ?? null)
+
+            const pol = q.pol || breakdown.pol
+            if (
+              !pickup_fee &&
+              Array.isArray(breakdown.pickup_options) &&
+              breakdown.pickup_options.length > 0 &&
+              pol
+            ) {
+              const polCity = IATA_MAP[pol.toUpperCase()] || ''
+              if (polCity) {
+                const match = breakdown.pickup_options.find(
+                  (p: any) => p.local && p.local.toUpperCase() === polCity,
+                )
+                if (match && match.valor) {
+                  pickup_fee = Number(match.valor)
+                }
+              }
+            }
+
             const destination_taxes = Number(breakdown.destination_taxes ?? null)
 
             let additional_fees = Number(q.additional_fees ?? null)
-            if (breakdown.taxas_adicionais && Array.isArray(breakdown.taxas_adicionais)) {
-              additional_fees = breakdown.taxas_adicionais.reduce(
-                (acc: number, t: any) => acc + (t.valor || 0),
-                0,
-              )
+            if (
+              !additional_fees &&
+              breakdown.taxas_adicionais &&
+              Array.isArray(breakdown.taxas_adicionais)
+            ) {
+              additional_fees = breakdown.taxas_adicionais.reduce((acc: number, t: any) => {
+                if (t.condicional) return acc
+                let val = t.valor || 0
+                if (t.tipo === 'por_kg') {
+                  let calc = val * (taxable || 0)
+                  if (t.minimo && calc < t.minimo) {
+                    calc = t.minimo
+                  }
+                  return acc + calc
+                }
+                return acc + val
+              }, 0)
             }
 
             return {

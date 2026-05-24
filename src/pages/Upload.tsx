@@ -463,6 +463,55 @@ export default function Upload() {
           throw new Error('Nenhuma cotação foi encontrada neste documento.')
         }
 
+        let sharedFormulaOrigem: string | undefined = undefined
+        let sharedPickupOptions: any[] | undefined = undefined
+
+        for (const q of quotes) {
+          if (q.formula_origem && !sharedFormulaOrigem) sharedFormulaOrigem = q.formula_origem
+          if (
+            q.pickup_options &&
+            Array.isArray(q.pickup_options) &&
+            q.pickup_options.length > 0 &&
+            !sharedPickupOptions
+          ) {
+            sharedPickupOptions = q.pickup_options
+          }
+        }
+
+        if (sharedFormulaOrigem || sharedPickupOptions) {
+          quotes = quotes.map((q: any) => {
+            const updatedQ = { ...q }
+
+            if (sharedFormulaOrigem && !updatedQ.formula_origem) {
+              updatedQ.formula_origem = sharedFormulaOrigem
+              if (
+                updatedQ.taxas_origem !== undefined &&
+                updatedQ.taxas_origem !== null &&
+                Number(updatedQ.taxas_origem) > 0
+              ) {
+                if (!Array.isArray(updatedQ.taxas_adicionais)) {
+                  updatedQ.taxas_adicionais = []
+                }
+                updatedQ.taxas_adicionais.push({
+                  tipo: 'por_embarque',
+                  valor: Number(updatedQ.taxas_origem),
+                  descricao: 'Taxa adicional da linha',
+                })
+                updatedQ.taxas_origem = 0
+              }
+            }
+
+            if (
+              sharedPickupOptions &&
+              (!updatedQ.pickup_options || updatedQ.pickup_options.length === 0)
+            ) {
+              updatedQ.pickup_options = sharedPickupOptions
+            }
+
+            return updatedQ
+          })
+        }
+
         setQuoteFiles((prev) =>
           prev.map((p) => (p.id === uf.id ? { ...p, status: 'success', quotes } : p)),
         )

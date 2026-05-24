@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-24T15:26:18.131Z",
+  "generatedAt": "2026-05-24T15:44:03.001Z",
   "collections": [
     {
       "name": "users",
@@ -29,14 +29,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         }
       ],
       "indexes": [
@@ -66,7 +71,11 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["Aéreo", "FCL", "LCL"]
+          "selectValues": [
+            "Aéreo",
+            "FCL",
+            "LCL"
+          ]
         },
         {
           "name": "cost",
@@ -110,14 +119,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "taxable_weight",
@@ -162,7 +176,11 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["em_analise", "aprovado", "rejeitado"]
+          "selectValues": [
+            "em_analise",
+            "aprovado",
+            "rejeitado"
+          ]
         },
         {
           "name": "rate_unitario",
@@ -175,7 +193,12 @@
           "type": "select",
           "required": false,
           "system": false,
-          "selectValues": ["daily", "3x_semana", "1x_semana", "sob_consulta"]
+          "selectValues": [
+            "daily",
+            "3x_semana",
+            "1x_semana",
+            "sob_consulta"
+          ]
         },
         {
           "name": "aeroporto_origem",
@@ -184,7 +207,9 @@
           "system": false
         }
       ],
-      "indexes": ["CREATE INDEX idx_quotations_user_id ON quotations (user_id)"]
+      "indexes": [
+        "CREATE INDEX idx_quotations_user_id ON quotations (user_id)"
+      ]
     },
     {
       "name": "extracted_data",
@@ -215,17 +240,24 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         }
       ],
-      "indexes": ["CREATE INDEX idx_extracted_data_quotation_id ON extracted_data (quotation_id)"]
+      "indexes": [
+        "CREATE INDEX idx_extracted_data_quotation_id ON extracted_data (quotation_id)"
+      ]
     },
     {
       "name": "pedidos",
@@ -273,7 +305,11 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["Aéreo", "FCL", "LCL"]
+          "selectValues": [
+            "Aéreo",
+            "FCL",
+            "LCL"
+          ]
         },
         {
           "name": "prazo_desejado_dias",
@@ -286,7 +322,11 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["aguardando_cotacao", "em_andamento", "concluido"]
+          "selectValues": [
+            "aguardando_cotacao",
+            "em_andamento",
+            "concluido"
+          ]
         },
         {
           "name": "user_id",
@@ -300,14 +340,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         },
         {
           "name": "quantidade_containers",
@@ -384,7 +429,10 @@
           "type": "select",
           "required": true,
           "system": false,
-          "selectValues": ["cota1", "cota2"]
+          "selectValues": [
+            "cota1",
+            "cota2"
+          ]
         },
         {
           "name": "user_id",
@@ -398,14 +446,19 @@
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate"]
+          "autodateTriggers": [
+            "onCreate"
+          ]
         },
         {
           "name": "updated",
           "type": "autodate",
           "required": false,
           "system": false,
-          "autodateTriggers": ["onCreate", "onUpdate"]
+          "autodateTriggers": [
+            "onCreate",
+            "onUpdate"
+          ]
         }
       ],
       "indexes": []
