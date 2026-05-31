@@ -47,6 +47,7 @@ routerAdd(
     5. Origem/EXW: Use formula_origem (string) para fórmulas baseadas em peso e taxas_origem (number) para valores fixos.
     6. Pickup/Adicionais: Extraia pickup_options como array de { local: string, valor: number } e taxas_adicionais como array de { tipo, valor, minimo, descricao, condicional }.
     7. Transit Time: Extraia transit_time_min e transit_time_max (numbers).
+    8. REGRA DOCUMENTO-NÍVEL: Identifique formula_origem, taxas_origem, pickup_options e incoterm como valores de nível de documento globais. Repita esses valores idênticos em todos os objetos de cotação dentro do array retornado. Certifique-se de que pickup_options nunca fique vazio se o documento contiver uma tabela de pickup. Formate pickup_options como um array de objetos: [{ "local": "City Name", "valor": 123 }].
 
     Retorne um JSON com a chave "quotations" contendo um array de objetos. Cada objeto deve ter:
     - agent_name: string (nome do agente)
@@ -82,6 +83,8 @@ routerAdd(
     const aiBody = {
       model: 'gpt-4o',
       temperature: 0,
+      top_p: 0,
+      seed: 7,
       response_format: responseFormat,
       messages: [{ role: 'user', content: prompt }],
     }

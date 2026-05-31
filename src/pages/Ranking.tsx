@@ -260,7 +260,7 @@ export default function Ranking() {
               COMPARADOR DE COTAÇÕES DE FRETE
             </h2>
             <p className="text-sm font-semibold text-slate-600 tracking-wider">
-              AIR / LCL / FCL – COM VALIDAÇÃO E SCORE OPERACIONAL
+              AIR / LCL / FCL – COM VALIDAÇÃO OPERACIONAL
             </p>
           </div>
 
@@ -474,14 +474,9 @@ export default function Ranking() {
                 <Th rowSpan={2}>RANK</Th>
                 <Th rowSpan={2}>AGENTE / ROTA</Th>
                 <Th rowSpan={2}>MODAL</Th>
-                <Th colSpan={5}>MEMÓRIA DE CÁLCULO (ALL-IN USD)</Th>
-                <Th colSpan={3}>OPERAÇÃO</Th>
+                <Th colSpan={6}>MEMÓRIA DE CÁLCULO (ALL-IN USD)</Th>
+                <Th colSpan={2}>OPERAÇÃO</Th>
                 <Th colSpan={2}>VALIDAÇÃO</Th>
-                <Th rowSpan={2}>
-                  SCORE
-                  <br />
-                  (0 a 1)
-                </Th>
                 <Th rowSpan={2} className="print-hidden">
                   STATUS
                 </Th>
@@ -490,11 +485,11 @@ export default function Ranking() {
                 <Th>Peso Taxável</Th>
                 <Th>Frete Unit.</Th>
                 <Th>Frete Total</Th>
+                <Th>Pickup</Th>
                 <Th>EXW / Origem</Th>
                 <Th className="bg-slate-200 text-slate-900">Total Global</Th>
                 <Th>Transit Time</Th>
                 <Th>Frequência</Th>
-                <Th>Validade</Th>
                 <Th>Prazo OK</Th>
                 <Th>Destino OK</Th>
               </tr>
@@ -558,12 +553,8 @@ export default function Ranking() {
                       {q.qTaxable > 0 ? q.qTaxable.toFixed(2) : '-'}
                     </Td>
                     <Td>{q.freteUnitario > 0 ? q.freteUnitario.toFixed(2) : '-'}</Td>
-                    <Td>
-                      {q.freteTotal > 0 ? q.freteTotal.toFixed(2) : '-'}{' '}
-                      <span className="text-[10px] text-slate-400 block">
-                        + Pickup: {q.pickupFee.toFixed(2)}
-                      </span>
-                    </Td>
+                    <Td>{q.freteTotal > 0 ? q.freteTotal.toFixed(2) : '-'}</Td>
+                    <Td>{q.pickupFee > 0 ? q.pickupFee.toFixed(2) : '-'}</Td>
                     <Td title={q.cost_breakdown?.formula_origem || 'Taxa Origem'}>
                       {q.appliedTaxasOrigem > 0 ? q.appliedTaxasOrigem.toFixed(2) : '0.00'}
                       {q.exwLog ? (
@@ -585,7 +576,6 @@ export default function Ranking() {
                     </Td>
                     <Td>{q.transit_time ? `${q.transit_time} dias` : '-'}</Td>
                     <Td className="capitalize">{q.frequencia?.replace('_', ' ') || '-'}</Td>
-                    <Td>{q.etd ? new Date(q.etd).toLocaleDateString('pt-BR') : '-'}</Td>
                     <Td
                       className={cn(
                         'font-bold',
@@ -595,16 +585,6 @@ export default function Ranking() {
                       {prazoOk ? 'OK' : 'NÃO'}
                     </Td>
                     <Td className="text-green-600 font-bold bg-green-50/50">SIM</Td>
-                    <Td
-                      className={cn(
-                        'font-bold text-[13px] border border-slate-300',
-                        q.isIncompleteData
-                          ? 'bg-slate-200 text-slate-500'
-                          : getScoreColor(q.calculatedScore / 100),
-                      )}
-                    >
-                      {q.isIncompleteData ? '0.0%' : `${q.calculatedScore.toFixed(1)}%`}
-                    </Td>
                     <Td className="print-hidden w-28 text-center p-1">
                       <select
                         className="w-full text-xs p-1 border rounded bg-white text-slate-800"
