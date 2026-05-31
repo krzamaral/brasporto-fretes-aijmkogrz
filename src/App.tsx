@@ -6,7 +6,6 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Upload from './pages/Upload'
-import Review from './pages/Review'
 import Ranking from './pages/Ranking'
 import History from './pages/History'
 import NotFound from './pages/NotFound'
@@ -29,7 +28,6 @@ const AppRoutes = () => {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/upload" element={<Upload />} />
-          <Route path="/review" element={<Review />} />
           <Route path="/ranking" element={<Ranking />} />
           <Route path="/history" element={<History />} />
         </Route>

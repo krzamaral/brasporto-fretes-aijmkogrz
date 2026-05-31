@@ -42,6 +42,7 @@ import { createCotacaoRound } from '@/services/cotacao_rounds'
 import { createQuotation } from '@/services/quotations'
 import { useAuth } from '@/hooks/use-auth'
 import * as pdfjsLib from 'pdfjs-dist'
+import { rankQuotations } from '@/lib/freight-calculator'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`
 
@@ -70,13 +71,10 @@ const pedidoSchema = z
       .optional(),
     tipo_mercadoria: z.string().optional(),
     modal_desejado: z.enum(['Aéreo', 'FCL', 'LCL']),
-    incoterm: z.enum(
-      ['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF'],
-      {
-        required_error: 'Obrigatório',
-        invalid_type_error: 'Incoterm inválido',
-      },
-    ),
+    incoterm: z.enum(['EXW', 'FCA', 'FAS', 'FOB'], {
+      required_error: 'Obrigatório',
+      invalid_type_error: 'Incoterm inválido',
+    }),
     prazo_desejado_dias: z
       .number({ invalid_type_error: 'Deve ser um número' })
       .nullable()
@@ -144,23 +142,6 @@ const validateIncotermCoherence = (incoterm: string, quote: any) => {
     ) {
       warnings.push(
         `Aviso de Coerência: Em ${incoterm}, os custos na origem geralmente são do vendedor. Verifique se o comprador está sendo cobrado indevidamente por despesas de origem.`,
-      )
-    }
-  } else if (incoterm === 'DDP') {
-    if (
-      !rawStr.includes('tax') &&
-      !rawStr.includes('imposto') &&
-      !rawStr.includes('duty') &&
-      !rawStr.includes('duties')
-    ) {
-      warnings.push(
-        'Aviso de Coerência: Em DDP, o vendedor é responsável pelos impostos (duties/taxes) no destino. Parece que não estão declarados na cotação.',
-      )
-    }
-  } else if (incoterm === 'DAP' || incoterm === 'DPU') {
-    if (rawStr.includes('tax') || rawStr.includes('imposto') || rawStr.includes('duty')) {
-      warnings.push(
-        `Aviso de Coerência: Em ${incoterm}, o comprador é responsável pelos impostos no destino. A cotação parece incluí-los indevidamente.`,
       )
     }
   }
@@ -311,19 +292,7 @@ export default function Upload() {
         )
       }
 
-      const hasExtractedIncoterm = [
-        'EXW',
-        'FCA',
-        'CPT',
-        'CIP',
-        'DAP',
-        'DPU',
-        'DDP',
-        'FAS',
-        'FOB',
-        'CFR',
-        'CIF',
-      ].includes(extracted?.incoterm)
+      const hasExtractedIncoterm = ['EXW', 'FCA', 'FAS', 'FOB'].includes(extracted?.incoterm)
 
       const hasExtractedOrigem = !!extracted?.origem
       const hasExtractedDestino = !!extracted?.destino
@@ -588,19 +557,7 @@ export default function Upload() {
     }
 
     let extractedIncoterm = undefined
-    const validIncoterms = [
-      'EXW',
-      'FCA',
-      'CPT',
-      'CIP',
-      'DAP',
-      'DPU',
-      'DDP',
-      'FAS',
-      'FOB',
-      'CFR',
-      'CIF',
-    ]
+    const validIncoterms = ['EXW', 'FCA', 'FAS', 'FOB']
     for (const q of allQuotes) {
       if (validIncoterms.includes(q?.incoterm)) {
         extractedIncoterm = q.incoterm
@@ -627,9 +584,23 @@ export default function Upload() {
         setPedidoIncoterm(reviewIncoterm)
       }
 
-      const extractedQuotesToPass = []
+      const ped = await getPedido(pedidoId)
+      if (!ped) throw new Error('Pedido não encontrado.')
+
+      const pedVolume = ped.volume || 0
+      const pedPeso = ped.peso_bruto || 0
+      let calcVolumetricAir = pedVolume / 0.006
+      if (ped.comprimento && ped.largura && ped.altura) {
+        calcVolumetricAir =
+          (ped.comprimento * ped.largura * ped.altura * (ped.quantidade_containers || 1)) / 6000
+      }
+      const calcVolumetricLCL = pedVolume * 1000
+      const chargeableAir = Math.ceil(Math.max(pedPeso, calcVolumetricAir))
+
+      const mappedQuotes: any[] = []
+
       for (const q of reviewQuotes || []) {
-        const modal = ['Aéreo', 'FCL', 'LCL'].includes(q?.modal) ? q.modal : 'Aéreo'
+        const modal = ['Aéreo', 'FCL', 'LCL'].includes(q?.modal) ? q.modal : ped.modal_desejado
 
         let formattedAgentName = q?.agent_name || 'Desconhecido'
         if (q?.carrier || q?.pol) {
@@ -639,7 +610,85 @@ export default function Upload() {
           }
         }
 
-        const mappedQ = {
+        let taxable = q?.taxable_weight ? Number(q.taxable_weight) : null
+        if (modal === 'Aéreo') {
+          taxable = Math.max(taxable || 0, chargeableAir)
+        } else if (!taxable) {
+          if (modal === 'LCL') {
+            taxable = Number(Math.max(pedPeso, calcVolumetricLCL).toFixed(2))
+          }
+        }
+
+        const breakdown = q || {}
+        const unit_rate = Number(breakdown.frete_unitario ?? null)
+        const taxas_origem = Number(breakdown.taxas_origem ?? breakdown.origin_taxes ?? null)
+        let pickup_fee = Number(breakdown.pickup_fee ?? null)
+
+        const pol = q?.pol || breakdown.pol
+        if (
+          !pickup_fee &&
+          Array.isArray(breakdown.pickup_options) &&
+          breakdown.pickup_options.length > 0 &&
+          pol
+        ) {
+          const IATA_MAP: Record<string, string> = {
+            PEK: 'PEKING',
+            PVG: 'SHANGHAI',
+            SHA: 'SHANGHAI',
+            CAN: 'GUANGZHOU',
+            SZX: 'SHENZHEN',
+            EHU: 'EZHOU',
+            XMN: 'XIAMEN',
+            CTU: 'CHENGDU',
+            HGH: 'HANGZHOU',
+            NKG: 'NANJING',
+            TAO: 'QINGDAO',
+            DLC: 'DALIAN',
+          }
+          const polCity = IATA_MAP[pol.toUpperCase()] || ''
+          if (polCity) {
+            const match = breakdown.pickup_options.find(
+              (p: any) => p.local && p.local.toUpperCase() === polCity,
+            )
+            if (match && match.valor) {
+              pickup_fee = Number(match.valor)
+            }
+          }
+        }
+
+        const destination_taxes = Number(breakdown.destination_taxes ?? null)
+
+        let additional_fees = Number(q.additional_fees ?? null) || 0
+        if (
+          !additional_fees &&
+          breakdown.taxas_adicionais &&
+          Array.isArray(breakdown.taxas_adicionais)
+        ) {
+          additional_fees = breakdown.taxas_adicionais.reduce((acc: number, t: any) => {
+            if (t.condicional) return acc
+            let val = t.valor || 0
+            if (t.tipo === 'por_kg') {
+              let calc = val * (taxable || 0)
+              if (t.minimo && calc < t.minimo) {
+                calc = t.minimo
+              }
+              return acc + calc
+            }
+            return acc + val
+          }, 0)
+        }
+
+        let etd = q?.etd || undefined
+        if (etd) {
+          const d = new Date(etd)
+          if (!isNaN(d.getTime())) {
+            etd = d.toISOString().split('T')[0]
+          } else {
+            etd = undefined
+          }
+        }
+
+        mappedQuotes.push({
           agent_name: formattedAgentName,
           modal,
           cost: 0,
@@ -649,31 +698,102 @@ export default function Upload() {
               ? Number(q.transit_time)
               : undefined,
           free_time: q?.free_time ? Number(q.free_time) : undefined,
-          taxable_weight: q?.taxable_weight ? Number(q.taxable_weight) : undefined,
-          etd: q?.etd || undefined,
-          cost_breakdown: q,
-        }
-
-        if (mappedQ.etd) {
-          const d = new Date(mappedQ.etd)
-          if (!isNaN(d.getTime())) {
-            mappedQ.etd = d.toISOString()
-          } else {
-            mappedQ.etd = undefined
-          }
-        }
-
-        extractedQuotesToPass.push(mappedQ)
+          taxable_weight: taxable,
+          etd,
+          unit_rate,
+          taxas_origem,
+          pickup_fee,
+          destination_taxes,
+          additional_fees,
+          cost_breakdown: breakdown,
+        })
       }
 
-      toast({ title: 'Sucesso', description: 'Análise concluída. Indo para revisão...' })
-      navigate('/review', {
-        state: { pedidoId, cota1Quotes: extractedQuotesToPass, cota2Quote: null },
+      const previewDataToRank = mappedQuotes.map((q, idx) => ({
+        id: `preview-${idx}`,
+        agent_name: q.agent_name || '',
+        modal: q.modal || 'Aéreo',
+        cost: q.cost || 0,
+        taxable_weight: q.taxable_weight || 0,
+        transit_time: q.transit_time || 0,
+        cost_breakdown: {
+          ...q.cost_breakdown,
+          frete_unitario: q.unit_rate || 0,
+          taxas_origem: q.taxas_origem || 0,
+          pickup_fee: q.pickup_fee || 0,
+          destination_taxes: q.destination_taxes || 0,
+          taxas_adicionais: [
+            { tipo: 'por_embarque', valor: q.additional_fees || 0, descricao: 'Outras Taxas' },
+          ],
+        },
+      }))
+
+      const ranked = rankQuotations(previewDataToRank as any, ped)
+
+      const round1 = await createCotacaoRound({
+        pedido_id: pedidoId,
+        nome_round: 'cota1',
+        user_id: user.id,
       })
+
+      const promises = mappedQuotes.map(async (q, idx) => {
+        const preview = ranked.find((p) => p.id === `preview-${idx}`)
+        const finalScore = preview?.calculatedScore || 0
+        const compat = (preview?.compatScore || 0) * 100
+
+        const updatedBreakdown = {
+          ...q.cost_breakdown,
+          frete_unitario: q.unit_rate,
+          taxas_origem: q.taxas_origem,
+          pickup_fee: q.pickup_fee,
+          destination_taxes: q.destination_taxes,
+          taxas_adicionais: [
+            {
+              tipo: 'por_embarque',
+              valor: q.additional_fees || 0,
+              descricao: 'Outras Taxas (Manual)',
+            },
+          ],
+        }
+
+        const createdQ = await createQuotation({
+          agent_name: q.agent_name,
+          modal: q.modal as any,
+          cost: preview?.computedTotal || 0,
+          transit_time: q.transit_time ?? undefined,
+          free_time: q.free_time ?? undefined,
+          etd: q.etd ?? undefined,
+          taxable_weight: q.taxable_weight ?? undefined,
+          rate_unitario: q.unit_rate ?? undefined,
+          score: finalScore,
+          compatibilidade_score: Math.round(compat),
+          pedido_id: pedidoId,
+          cotacao_round_id: round1.id,
+          user_id: user.id,
+          cost_breakdown: updatedBreakdown,
+        })
+
+        try {
+          await pb.collection('extracted_data').create({
+            quotation_id: createdQ.id,
+            raw_data: q.cost_breakdown || {},
+          })
+        } catch (err) {
+          console.error('Failed to save extracted data:', err)
+        }
+
+        return createdQ
+      })
+
+      await Promise.all(promises)
+      await updatePedido(pedidoId, { status: 'concluido' })
+
+      toast({ title: 'Sucesso', description: 'Cotações salvas. Indo para o ranking...' })
+      navigate('/ranking', { state: { pedidoId } })
     } catch (err: any) {
       console.error(err)
       setStatus('error')
-      setErrorMessage('Falha ao avançar para a revisão.')
+      setErrorMessage('Falha ao processar e salvar as cotações.')
     }
   }
 
@@ -880,19 +1000,7 @@ export default function Upload() {
                   <SelectValue placeholder="Selecione o Incoterm" />
                 </SelectTrigger>
                 <SelectContent>
-                  {[
-                    'EXW',
-                    'FCA',
-                    'CPT',
-                    'CIP',
-                    'DAP',
-                    'DPU',
-                    'DDP',
-                    'FAS',
-                    'FOB',
-                    'CFR',
-                    'CIF',
-                  ].map((inc) => (
+                  {['EXW', 'FCA', 'FAS', 'FOB'].map((inc) => (
                     <SelectItem key={inc} value={inc}>
                       {inc}
                     </SelectItem>
@@ -1417,19 +1525,7 @@ export default function Upload() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {[
-                            'EXW',
-                            'FCA',
-                            'CPT',
-                            'CIP',
-                            'DAP',
-                            'DPU',
-                            'DDP',
-                            'FAS',
-                            'FOB',
-                            'CFR',
-                            'CIF',
-                          ].map((inc) => (
+                          {['EXW', 'FCA', 'FAS', 'FOB'].map((inc) => (
                             <SelectItem key={inc} value={inc}>
                               {inc}
                             </SelectItem>
