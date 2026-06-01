@@ -190,6 +190,177 @@ export type EnrichedQuotation = Quotation & {
   subjectToReconfirmation: boolean
 }
 
+export const FX_TO_USD: Record<string, number> = {
+  USD: 1,
+  EUR: 1 / 0.92,
+  BRL: 1 / 5.1,
+  R$: 1 / 5.1,
+  GBP: 1 / 0.78,
+}
+
+export function toUSD(amount: number, currency: string = 'USD'): number {
+  const curr = currency.toUpperCase().trim()
+  const rate = FX_TO_USD[curr] || 1
+  return amount * rate
+}
+
+function sumSurchargesBySection(surcharges: any[], section: string): number {
+  if (!surcharges || !Array.isArray(surcharges)) return 0
+  return surcharges
+    .filter((s: any) => (s.section || '').toLowerCase() === section)
+    .reduce((acc: number, s: any) => {
+      const val = Number(s.amount) || 0
+      return acc + toUSD(val, s.currency || 'USD')
+    }, 0)
+}
+
+export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQuotation[] {
+  if (quotations.length === 0) return []
+
+  const enriched = quotations.map((q) => {
+    let isIncompleteData = false
+    const cb = (q.cost_breakdown as any) || {}
+    const totalsInformed = cb.totals_informed || []
+    const surcharges = cb.surcharges || []
+
+    const allTotalInfo = totalsInformed.find((t: any) => (t.section || '').toLowerCase() === 'all')
+
+    let computedTotal = 0
+    let appliedTaxasOrigem = 0
+    let freteTotal = 0
+    let destinationTaxes = 0
+
+    if (allTotalInfo && allTotalInfo.amount) {
+      computedTotal = toUSD(allTotalInfo.amount, allTotalInfo.currency || 'USD')
+      freteTotal = computedTotal
+    } else {
+      const originInfo = totalsInformed.find(
+        (t: any) => (t.section || '').toLowerCase() === 'origin',
+      )
+      const freightInfo = totalsInformed.find(
+        (t: any) => (t.section || '').toLowerCase() === 'freight',
+      )
+      const destInfo = totalsInformed.find(
+        (t: any) => (t.section || '').toLowerCase() === 'destination',
+      )
+
+      appliedTaxasOrigem = originInfo?.amount
+        ? toUSD(originInfo.amount, originInfo.currency)
+        : sumSurchargesBySection(surcharges, 'origin')
+      freteTotal = freightInfo?.amount
+        ? toUSD(freightInfo.amount, freightInfo.currency)
+        : sumSurchargesBySection(surcharges, 'freight')
+      destinationTaxes = destInfo?.amount
+        ? toUSD(destInfo.amount, destInfo.currency)
+        : sumSurchargesBySection(surcharges, 'destination')
+
+      computedTotal = appliedTaxasOrigem + freteTotal + destinationTaxes
+    }
+
+    if (computedTotal === 0 && surcharges.length === 0 && totalsInformed.length === 0) {
+      isIncompleteData = true
+    }
+
+    const compatScore = q.modal === pedido.modal_desejado ? 1 : 0.5
+
+    const addTaxesLog = surcharges.map((s: any) => {
+      const amt = Number(s.amount) || 0
+      return `${s.description || 'Taxa'} (${s.section || 'n/a'}): ${s.currency || 'USD'} ${amt.toFixed(2)}`
+    })
+
+    const subjectToReconfirmation =
+      /subject to reconfirmation|unstable|subject to change|subject to increase/i.test(
+        q.agent_name + ' ' + (q.option_description || ''),
+      )
+
+    return {
+      ...q,
+      qTaxable: q.taxable_weight || 0,
+      computedTotal,
+      exwLog: '',
+      addTaxesLog,
+      freteTotal,
+      freteUnitario: 0,
+      appliedTaxasOrigem,
+      pickupFee: 0,
+      additionalTaxes: 0,
+      destinationTaxes,
+      compatScore,
+      calculatedScore: 0,
+      costScore: 0,
+      transitScore: 0,
+      justificativaEngine: '',
+      isEXW: pedido.incoterm === 'EXW',
+      isIncompleteData,
+      isCheapest: false,
+      isBestBalance: false,
+      subjectToReconfirmation,
+    } as EnrichedQuotation & { freteUnitario: number; isEXW: boolean }
+  })
+
+  enriched.sort((a, b) => {
+    if (a.isIncompleteData && !b.isIncompleteData) return 1
+    if (!a.isIncompleteData && b.isIncompleteData) return -1
+    return a.computedTotal - b.computedTotal
+  })
+
+  const validForRanking = enriched.filter((q) => !q.isIncompleteData && q.computedTotal > 0)
+
+  if (validForRanking.length > 0) {
+    const cheapest = validForRanking[0]
+    cheapest.isCheapest = true
+
+    let bestBalance = cheapest
+    for (let i = 1; i < validForRanking.length; i++) {
+      const q = validForRanking[i]
+      if (q.transit_time && cheapest.transit_time) {
+        const timeDiffPct = (cheapest.transit_time - q.transit_time) / cheapest.transit_time
+        const costDiffPct = (q.computedTotal - cheapest.computedTotal) / cheapest.computedTotal
+        if (timeDiffPct >= 0.2 && costDiffPct <= 0.1) {
+          if (bestBalance === cheapest || q.transit_time < bestBalance.transit_time!) {
+            bestBalance = q
+          }
+        }
+      }
+    }
+    bestBalance.isBestBalance = true
+
+    const minCost = cheapest.computedTotal
+    const minTransit = Math.min(...validForRanking.map((q) => q.transit_time || 999))
+
+    enriched.forEach((q) => {
+      let costScore = 0
+      if (!q.isIncompleteData && q.computedTotal > 0) {
+        costScore = (minCost / q.computedTotal) * 50
+      }
+
+      const transitScore =
+        (q.transit_time ?? 0) > 0 ? (minTransit / (q.transit_time as number)) * 30 : 0
+      const compatScorePoints = q.compatScore * 20
+
+      const finalScore = q.isIncompleteData ? 0 : costScore + transitScore + compatScorePoints
+
+      let justificativa = ''
+      if (q.isIncompleteData) {
+        justificativa = `Dados Incompletos: Não foi possível calcular o custo total devido à falta de informações de taxas na extração.`
+      } else {
+        if (q.isBestBalance && q !== cheapest) {
+          justificativa = `🏆 Opção Recomendada (Best Balance): Transit time ${(((cheapest.transit_time! - q.transit_time!) / cheapest.transit_time!) * 100).toFixed(0)}% menor com custo apenas ${(((q.computedTotal - cheapest.computedTotal) / cheapest.computedTotal) * 100).toFixed(0)}% maior que a mais barata.`
+        } else if (q.isCheapest) {
+          justificativa = `💰 Opção Mais Barata (Menor Custo Total All-In).`
+        }
+      }
+
+      q.calculatedScore = finalScore
+      q.costScore = costScore
+      q.transitScore = transitScore
+      q.justificativaEngine = justificativa
+    })
+  }
+
+  return enriched
+}
+
 export function rankQuotations(quotations: Quotation[], pedido: Pedido): EnrichedQuotation[] {
   if (quotations.length === 0) return []
 

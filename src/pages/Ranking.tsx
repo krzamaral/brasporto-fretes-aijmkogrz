@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 import { useRealtime } from '@/hooks/use-realtime'
 import {
   rankQuotations,
+  rankMaritimo,
   type EnrichedQuotation,
   calculateChargeableWeight,
 } from '@/lib/freight-calculator'
@@ -48,7 +49,8 @@ export default function Ranking() {
       const [ped, quots] = await Promise.all([getPedido(pedidoId), getQuotationsByPedido(pedidoId)])
       setPedido(ped)
 
-      const ranked = rankQuotations(quots, ped)
+      const isMaritimo = ped.modal_desejado === 'FCL' || ped.modal_desejado === 'LCL'
+      const ranked = isMaritimo ? rankMaritimo(quots, ped) : rankQuotations(quots, ped)
       setQuotations(ranked)
 
       if (ranked.length > 0 && !aiComment) {
