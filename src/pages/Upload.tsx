@@ -9,6 +9,9 @@ import {
   UploadCloud,
   ChevronRight,
   CheckCircle2,
+  Plane,
+  Ship,
+  Package,
 } from 'lucide-react'
 import { Stepper } from '@/components/Stepper'
 import { Button } from '@/components/ui/button'
@@ -153,6 +156,7 @@ export default function Upload() {
   const location = useLocation()
   const initialPedidoId = location.state?.pedidoId
 
+  const [selectedModal, setSelectedModal] = useState<'Aéreo' | 'FCL' | 'LCL' | null>(null)
   const [wizardStep, setWizardStep] = useState(initialPedidoId ? 2 : 1)
   const [pedidoId, setPedidoId] = useState<string | null>(initialPedidoId || null)
 
@@ -184,16 +188,6 @@ export default function Upload() {
     (f) => f.status === 'success' && f.quotes && f.quotes.length > 0,
   )
 
-  useEffect(() => {
-    if (initialPedidoId) {
-      getPedido(initialPedidoId)
-        .then((p) => {
-          if (p?.incoterm) setPedidoIncoterm(p.incoterm)
-        })
-        .catch(console.error)
-    }
-  }, [initialPedidoId])
-
   const form = useForm<PedidoFormValues>({
     resolver: zodResolver(pedidoSchema),
     defaultValues: {
@@ -212,6 +206,20 @@ export default function Upload() {
       prazo_desejado_dias: null,
     },
   })
+
+  useEffect(() => {
+    if (initialPedidoId) {
+      getPedido(initialPedidoId)
+        .then((p) => {
+          if (p?.incoterm) setPedidoIncoterm(p.incoterm)
+          if (p?.modal_desejado) {
+            setSelectedModal(p.modal_desejado as 'Aéreo' | 'FCL' | 'LCL')
+            form.setValue('modal_desejado', p.modal_desejado as 'Aéreo' | 'FCL' | 'LCL')
+          }
+        })
+        .catch(console.error)
+    }
+  }, [initialPedidoId, form])
 
   const extractTextFromPdf = async (file: File): Promise<string> => {
     try {
@@ -317,9 +325,11 @@ export default function Upload() {
             }))
           : [],
         tipo_mercadoria: extracted?.tipo_mercadoria || '',
-        modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(extracted?.modal_desejado)
-          ? extracted.modal_desejado
-          : 'Aéreo',
+        modal_desejado: selectedModal
+          ? selectedModal
+          : ['Aéreo', 'FCL', 'LCL'].includes(extracted?.modal_desejado)
+            ? extracted.modal_desejado
+            : 'Aéreo',
         incoterm: hasExtractedIncoterm ? extracted.incoterm : undefined,
         prazo_desejado_dias: extracted?.prazo_desejado_dias
           ? Number(extracted.prazo_desejado_dias)
@@ -1857,10 +1867,67 @@ export default function Upload() {
         </Button>
       </div>
 
-      <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm mb-6">
-        <Stepper currentStep={wizardStep} />
-        {renderContent()}
-      </Card>
+      {!selectedModal && !pedidoId ? (
+        <Card className="p-6 md:p-12 bg-white border-slate-200 shadow-sm mb-6 max-w-4xl mx-auto w-full">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl font-bold text-slate-800">Que tipo de cotação?</h3>
+            <p className="text-slate-500 mt-2">
+              Selecione o modal de transporte para iniciar a solicitação.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <button
+              onClick={() => {
+                setSelectedModal('Aéreo')
+                form.setValue('modal_desejado', 'Aéreo')
+              }}
+              className="flex flex-col items-center p-8 border-2 border-slate-200 rounded-xl hover:border-primary hover:bg-slate-50 transition-all text-center group"
+            >
+              <div className="h-16 w-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Plane className="h-8 w-8" />
+              </div>
+              <h4 className="text-xl font-bold text-slate-800 mb-1">Aéreo</h4>
+              <span className="text-sm font-medium text-slate-500 mb-3">Air Freight</span>
+              <p className="text-xs text-slate-400">Cargas via aérea · peso taxável</p>
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedModal('FCL')
+                form.setValue('modal_desejado', 'FCL')
+              }}
+              className="flex flex-col items-center p-8 border-2 border-slate-200 rounded-xl hover:border-primary hover:bg-slate-50 transition-all text-center group"
+            >
+              <div className="h-16 w-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Ship className="h-8 w-8" />
+              </div>
+              <h4 className="text-xl font-bold text-slate-800 mb-1">FCL</h4>
+              <span className="text-sm font-medium text-slate-500 mb-3">Full Container Load</span>
+              <p className="text-xs text-slate-400">Container fechado · 20' / 40'</p>
+            </button>
+
+            <button
+              onClick={() => {
+                setSelectedModal('LCL')
+                form.setValue('modal_desejado', 'LCL')
+              }}
+              className="flex flex-col items-center p-8 border-2 border-slate-200 rounded-xl hover:border-primary hover:bg-slate-50 transition-all text-center group"
+            >
+              <div className="h-16 w-16 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                <Package className="h-8 w-8" />
+              </div>
+              <h4 className="text-xl font-bold text-slate-800 mb-1">LCL</h4>
+              <span className="text-sm font-medium text-slate-500 mb-3">Less than Container</span>
+              <p className="text-xs text-slate-400">Carga consolidada · W/M</p>
+            </button>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-6 md:p-8 bg-white border-slate-200 shadow-sm mb-6">
+          <Stepper currentStep={wizardStep} />
+          {renderContent()}
+        </Card>
+      )}
     </div>
   )
 }
