@@ -705,6 +705,7 @@ export default function Upload() {
           pickup_fee,
           destination_taxes,
           additional_fees,
+          frequencia: q?.frequencia ?? null,
           cost_breakdown: breakdown,
         })
       }
@@ -765,6 +766,7 @@ export default function Upload() {
           etd: q.etd ?? undefined,
           taxable_weight: q.taxable_weight ?? undefined,
           rate_unitario: q.unit_rate ?? undefined,
+          frequencia: q.frequencia ?? undefined,
           score: finalScore,
           compatibilidade_score: Math.round(compat),
           pedido_id: pedidoId,

@@ -62,11 +62,8 @@ export const getQuotationsByPedido = (pedidoId: string) =>
   })
 
 export const getHistoryQuotations = () => {
-  const thirtyDaysAgo = new Date()
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-  const dateStr = thirtyDaysAgo.toISOString().replace('T', ' ').substring(0, 19)
   return pb.collection('quotations').getFullList<Quotation>({
-    filter: `updated >= '${dateStr}' && pedido_id != ''`,
+    filter: `pedido_id != ''`,
     sort: '-score',
     expand: 'user_id',
   })

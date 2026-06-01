@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { Inbox, FileSearch, FileText, CheckSquare, Trophy } from 'lucide-react'
+import { Inbox, FileSearch, FileText, Trophy } from 'lucide-react'
 
 interface StepperProps {
   currentStep: number
@@ -9,8 +9,7 @@ const STEPS = [
   { label: '1. SOLICITAÇÃO\nDO CLIENTE', icon: Inbox },
   { label: '2. CONFERÊNCIA\nLOGÍSTICA', icon: FileSearch },
   { label: '3. COTAÇÕES\nDOS AGENTES', icon: FileText },
-  { label: '4. VALIDAÇÃO E\nCOMPARAÇÃO', icon: CheckSquare },
-  { label: '5. DECISÃO', icon: Trophy },
+  { label: '4. DECISÃO', icon: Trophy },
 ]
 
 export function Stepper({ currentStep }: StepperProps) {
@@ -26,7 +25,7 @@ export function Stepper({ currentStep }: StepperProps) {
           const Icon = step.icon
 
           return (
-            <div key={step.label} className="relative z-10 flex flex-col items-center group w-1/5">
+            <div key={step.label} className="relative z-10 flex flex-col items-center group w-1/4">
               <div className="flex items-center gap-2 lg:gap-3 bg-white print:bg-white px-2">
                 <div
                   className={cn(

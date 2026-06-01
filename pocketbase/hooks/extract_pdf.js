@@ -47,7 +47,13 @@ routerAdd(
     5. Origem/EXW: Use formula_origem (string) para fórmulas baseadas em peso e taxas_origem (number) para valores fixos.
     6. Pickup/Adicionais: Extraia pickup_options como array de { local: string, valor: number } e taxas_adicionais como array de { tipo, valor, minimo, descricao, condicional }.
     7. Transit Time: Extraia transit_time_min e transit_time_max (numbers).
-    8. REGRA DOCUMENTO-NÍVEL: Identifique formula_origem, taxas_origem, pickup_options e incoterm como valores de nível de documento globais. Repita esses valores idênticos em todos os objetos de cotação dentro do array retornado. Certifique-se de que pickup_options nunca fique vazio se o documento contiver uma tabela de pickup. Formate pickup_options como um array de objetos: [{ "local": "City Name", "valor": 123 }].
+    8. Frequência (frequencia): mapeie qualquer menção de periodicidade da rota/serviço para um destes valores EXATOS:
+       - "daily" → diária, todo dia, daily, qualquer indicação de saídas diárias
+       - "3x_semana" → 3x por semana, três vezes na semana, três voos/saídas por semana
+       - "1x_semana" → semanal, weekly, 1x por semana, uma saída por semana
+       - "sob_consulta" → quando o documento mencionar frequência mas com ressalva tipo "a confirmar", "sob disponibilidade"
+       Se NÃO houver qualquer menção de frequência no documento, retorne null. NÃO inventar.
+    9. REGRA DOCUMENTO-NÍVEL: Identifique formula_origem, taxas_origem, pickup_options e incoterm como valores de nível de documento globais. Repita esses valores idênticos em todos os objetos de cotação dentro do array retornado. Certifique-se de que pickup_options nunca fique vazio se o documento contiver uma tabela de pickup. Formate pickup_options como um array de objetos: [{ "local": "City Name", "valor": 123 }].
 
     Retorne um JSON com a chave "quotations" contendo um array de objetos. Cada objeto deve ter:
     - agent_name: string (nome do agente)
@@ -59,6 +65,7 @@ routerAdd(
     - transit_time_min: number (em dias)
     - transit_time_max: number (em dias)
     - free_time: number (em dias)
+    - frequencia: 'daily' | '3x_semana' | '1x_semana' | 'sob_consulta' | null
     - taxable_weight: number (apenas se for um valor numérico exato extraído do documento)
     - weight_break: string (ex: "+100", "+300", "MIN")
     - etd: string (formato YYYY-MM-DD)
