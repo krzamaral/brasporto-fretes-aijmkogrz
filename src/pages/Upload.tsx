@@ -417,7 +417,9 @@ export default function Upload() {
         if (!text || text.trim().length === 0)
           throw new Error('Nenhum texto detectado no documento.')
 
-        const payload = { text, docType: 'cotacao', step: 2, userId: user.id, pedidoId }
+        const docType =
+          selectedModal === 'FCL' || selectedModal === 'LCL' ? 'cotacao_maritimo' : 'cotacao'
+        const payload = { text, docType, step: 2, userId: user.id, pedidoId }
         const res = await pb.send('/backend/v1/extract-pdf', {
           method: 'POST',
           body: JSON.stringify(payload),
