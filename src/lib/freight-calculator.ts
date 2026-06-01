@@ -412,26 +412,9 @@ export function rankQuotations(quotations: Quotation[], pedido: Pedido): Enriche
         justificativa = `Dados Incompletos: Não foi possível calcular o custo total devido à falta de tarifas, peso ou dimensões na extração.`
       } else {
         if (q.isBestBalance && q !== cheapest) {
-          justificativa = `🏆 Opção Recomendada (Best Balance): Transit time ${(((cheapest.transit_time! - q.transit_time!) / cheapest.transit_time!) * 100).toFixed(0)}% menor com custo apenas ${(((q.computedTotal - cheapest.computedTotal) / cheapest.computedTotal) * 100).toFixed(0)}% maior que a mais barata.\n\n`
+          justificativa = `🏆 Opção Recomendada (Best Balance): Transit time ${(((cheapest.transit_time! - q.transit_time!) / cheapest.transit_time!) * 100).toFixed(0)}% menor com custo apenas ${(((q.computedTotal - cheapest.computedTotal) / cheapest.computedTotal) * 100).toFixed(0)}% maior que a mais barata.`
         } else if (q.isCheapest) {
-          justificativa = `💰 Opção Mais Barata (Menor Custo Total All-In).\n\n`
-        }
-        justificativa += `Score Operacional: ${finalScore.toFixed(1)}/100 (Custo: ${costScore.toFixed(1)}/50, Transit Time: ${transitScore.toFixed(1)}/30, Compatibilidade: ${compatScorePoints.toFixed(1)}/20).\n`
-        justificativa += `Detalhamento de Custos (USD ${q.computedTotal.toFixed(2)}):\n`
-        justificativa += `- Frete Base: USD ${q.freteTotal.toFixed(2)} (${q.qTaxable.toFixed(2)} kg * USD ${(q as any).freteUnitario.toFixed(2)})\n`
-        if ((q as any).isEXW) {
-          justificativa += `- EXW/Origem: USD ${q.appliedTaxasOrigem.toFixed(2)} (${q.exwLog})\n`
-        } else if (q.appliedTaxasOrigem > 0) {
-          justificativa += `- Taxas Origem: USD ${q.appliedTaxasOrigem.toFixed(2)}\n`
-        }
-        if (q.pickupFee > 0) {
-          justificativa += `- Pickup Fee: USD ${q.pickupFee.toFixed(2)}\n`
-        }
-        if (q.addTaxesLog.length > 0) {
-          justificativa += `- Adicionais: ${q.addTaxesLog.join(', ')}\n`
-        }
-        if (q.destinationTaxes > 0) {
-          justificativa += `- Destino: USD ${q.destinationTaxes.toFixed(2)}\n`
+          justificativa = `💰 Opção Mais Barata (Menor Custo Total All-In).`
         }
       }
 

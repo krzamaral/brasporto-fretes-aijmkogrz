@@ -322,24 +322,29 @@ export default function Ranking() {
                   <LabelTd>Destino:</LabelTd>
                   <Td>{pedido.destino}</Td>
                 </tr>
-                <tr>
-                  <LabelTd>ETA Máximo:</LabelTd>
-                  <Td>{pedido.prazo_desejado_dias ? `${pedido.prazo_desejado_dias} dias` : '-'}</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Mercadoria:</LabelTd>
-                  <Td>{pedido.tipo_mercadoria || '-'}</Td>
-                </tr>
-                <tr>
-                  <LabelTd>Dimensões:</LabelTd>
-                  <Td>
-                    {pedido.itens && pedido.itens.length > 0
-                      ? `${pedido.itens.length} vol(s) detalhados`
-                      : pedido.comprimento && pedido.largura && pedido.altura
-                        ? `${pedido.comprimento}x${pedido.largura}x${pedido.altura} cm`
-                        : '-'}
-                  </Td>
-                </tr>
+                {pedido.prazo_desejado_dias ? (
+                  <tr>
+                    <LabelTd>ETA Máximo:</LabelTd>
+                    <Td>{pedido.prazo_desejado_dias} dias</Td>
+                  </tr>
+                ) : null}
+                {pedido.tipo_mercadoria ? (
+                  <tr>
+                    <LabelTd>Mercadoria:</LabelTd>
+                    <Td>{pedido.tipo_mercadoria}</Td>
+                  </tr>
+                ) : null}
+                {(pedido.itens && pedido.itens.length > 0) ||
+                (pedido.comprimento && pedido.largura && pedido.altura) ? (
+                  <tr>
+                    <LabelTd>Dimensões:</LabelTd>
+                    <Td>
+                      {pedido.itens && pedido.itens.length > 0
+                        ? `${pedido.itens.length} vol(s) detalhados`
+                        : `${pedido.comprimento}x${pedido.largura}x${pedido.altura} cm`}
+                    </Td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -415,10 +420,12 @@ export default function Ranking() {
                     </div>
                   </Td>
                 </tr>
-                <tr>
-                  <LabelTd>Quantidade Vol:</LabelTd>
-                  <Td>{pedido.quantidade_containers || '-'}</Td>
-                </tr>
+                {pedido.quantidade_containers ? (
+                  <tr>
+                    <LabelTd>Quantidade Vol:</LabelTd>
+                    <Td>{pedido.quantidade_containers}</Td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -555,16 +562,8 @@ export default function Ranking() {
                     <Td>{q.freteUnitario > 0 ? q.freteUnitario.toFixed(2) : '-'}</Td>
                     <Td>{q.freteTotal > 0 ? q.freteTotal.toFixed(2) : '-'}</Td>
                     <Td>{q.pickupFee > 0 ? q.pickupFee.toFixed(2) : '-'}</Td>
-                    <Td title={q.cost_breakdown?.formula_origem || 'Taxa Origem'}>
+                    <Td title={q.exwLog || q.cost_breakdown?.formula_origem || 'Taxa Origem'}>
                       {q.appliedTaxasOrigem > 0 ? q.appliedTaxasOrigem.toFixed(2) : '0.00'}
-                      {q.exwLog ? (
-                        <span
-                          className="text-[9px] text-slate-400 block max-w-[120px] truncate mx-auto"
-                          title={q.exwLog}
-                        >
-                          {q.exwLog.split('=')[0]}
-                        </span>
-                      ) : null}
                     </Td>
                     <Td
                       className={cn(
@@ -671,17 +670,21 @@ export default function Ranking() {
                       {q.additionalTaxes.toFixed(2)} = USD {q.computedTotal.toFixed(2)}
                     </div>
 
-                    <h5 className="text-[10px] font-bold text-slate-500 uppercase mb-1">
-                      Justificativa Técnica (Motor de Ranking)
-                    </h5>
-                    <div
-                      className={cn(
-                        'mt-1 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed bg-white p-2 border border-slate-100 rounded print:border-slate-300',
-                        q.isIncompleteData && 'text-red-700 bg-red-50 border-red-100',
-                      )}
-                    >
-                      {q.justificativaEngine}
-                    </div>
+                    {q.justificativaEngine ? (
+                      <>
+                        <h5 className="text-[10px] font-bold text-slate-500 uppercase mb-1">
+                          Justificativa Técnica (Motor de Ranking)
+                        </h5>
+                        <div
+                          className={cn(
+                            'mt-1 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed bg-white p-2 border border-slate-100 rounded print:border-slate-300',
+                            q.isIncompleteData && 'text-red-700 bg-red-50 border-red-100',
+                          )}
+                        >
+                          {q.justificativaEngine}
+                        </div>
+                      </>
+                    ) : null}
                   </div>
                 </div>
               ))}
