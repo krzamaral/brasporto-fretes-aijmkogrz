@@ -45,7 +45,7 @@ import { createCotacaoRound } from '@/services/cotacao_rounds'
 import { createQuotation } from '@/services/quotations'
 import { useAuth } from '@/hooks/use-auth'
 import * as pdfjsLib from 'pdfjs-dist'
-import { rankQuotations } from '@/lib/freight-calculator'
+import { rankQuotations, rankMaritimo } from '@/lib/freight-calculator'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`
 
@@ -632,62 +632,72 @@ export default function Upload() {
         }
 
         const breakdown = q || {}
-        const unit_rate = Number(breakdown.frete_unitario ?? null)
-        const taxas_origem = Number(breakdown.taxas_origem ?? breakdown.origin_taxes ?? null)
-        let pickup_fee = Number(breakdown.pickup_fee ?? null)
+        const isMaritimo = modal === 'FCL' || modal === 'LCL'
 
-        const pol = q?.pol || breakdown.pol
-        if (
-          !pickup_fee &&
-          Array.isArray(breakdown.pickup_options) &&
-          breakdown.pickup_options.length > 0 &&
-          pol
-        ) {
-          const IATA_MAP: Record<string, string> = {
-            PEK: 'PEKING',
-            PVG: 'SHANGHAI',
-            SHA: 'SHANGHAI',
-            CAN: 'GUANGZHOU',
-            SZX: 'SHENZHEN',
-            EHU: 'EZHOU',
-            XMN: 'XIAMEN',
-            CTU: 'CHENGDU',
-            HGH: 'HANGZHOU',
-            NKG: 'NANJING',
-            TAO: 'QINGDAO',
-            DLC: 'DALIAN',
-          }
-          const polCity = IATA_MAP[pol.toUpperCase()] || ''
-          if (polCity) {
-            const match = breakdown.pickup_options.find(
-              (p: any) => p.local && p.local.toUpperCase() === polCity,
-            )
-            if (match && match.valor) {
-              pickup_fee = Number(match.valor)
+        let unit_rate = 0
+        let taxas_origem = 0
+        let pickup_fee = 0
+        let destination_taxes = 0
+        let additional_fees = 0
+
+        if (!isMaritimo) {
+          unit_rate = Number(breakdown.frete_unitario ?? null)
+          taxas_origem = Number(breakdown.taxas_origem ?? breakdown.origin_taxes ?? null)
+          pickup_fee = Number(breakdown.pickup_fee ?? null)
+
+          const pol = q?.pol || breakdown.pol
+          if (
+            !pickup_fee &&
+            Array.isArray(breakdown.pickup_options) &&
+            breakdown.pickup_options.length > 0 &&
+            pol
+          ) {
+            const IATA_MAP: Record<string, string> = {
+              PEK: 'PEKING',
+              PVG: 'SHANGHAI',
+              SHA: 'SHANGHAI',
+              CAN: 'GUANGZHOU',
+              SZX: 'SHENZHEN',
+              EHU: 'EZHOU',
+              XMN: 'XIAMEN',
+              CTU: 'CHENGDU',
+              HGH: 'HANGZHOU',
+              NKG: 'NANJING',
+              TAO: 'QINGDAO',
+              DLC: 'DALIAN',
             }
-          }
-        }
-
-        const destination_taxes = Number(breakdown.destination_taxes ?? null)
-
-        let additional_fees = Number(q.additional_fees ?? null) || 0
-        if (
-          !additional_fees &&
-          breakdown.taxas_adicionais &&
-          Array.isArray(breakdown.taxas_adicionais)
-        ) {
-          additional_fees = breakdown.taxas_adicionais.reduce((acc: number, t: any) => {
-            if (t.condicional) return acc
-            let val = t.valor || 0
-            if (t.tipo === 'por_kg') {
-              let calc = val * (taxable || 0)
-              if (t.minimo && calc < t.minimo) {
-                calc = t.minimo
+            const polCity = IATA_MAP[pol.toUpperCase()] || ''
+            if (polCity) {
+              const match = breakdown.pickup_options.find(
+                (p: any) => p.local && p.local.toUpperCase() === polCity,
+              )
+              if (match && match.valor) {
+                pickup_fee = Number(match.valor)
               }
-              return acc + calc
             }
-            return acc + val
-          }, 0)
+          }
+
+          destination_taxes = Number(breakdown.destination_taxes ?? null)
+
+          additional_fees = Number(q.additional_fees ?? null) || 0
+          if (
+            !additional_fees &&
+            breakdown.taxas_adicionais &&
+            Array.isArray(breakdown.taxas_adicionais)
+          ) {
+            additional_fees = breakdown.taxas_adicionais.reduce((acc: number, t: any) => {
+              if (t.condicional) return acc
+              let val = t.valor || 0
+              if (t.tipo === 'por_kg') {
+                let calc = val * (taxable || 0)
+                if (t.minimo && calc < t.minimo) {
+                  calc = t.minimo
+                }
+                return acc + calc
+              }
+              return acc + val
+            }, 0)
+          }
         }
 
         let etd = q?.etd || undefined
@@ -722,26 +732,38 @@ export default function Upload() {
         })
       }
 
-      const previewDataToRank = mappedQuotes.map((q, idx) => ({
-        id: `preview-${idx}`,
-        agent_name: q.agent_name || '',
-        modal: q.modal || 'Aéreo',
-        cost: q.cost || 0,
-        taxable_weight: q.taxable_weight || 0,
-        transit_time: q.transit_time || 0,
-        cost_breakdown: {
-          ...q.cost_breakdown,
-          frete_unitario: q.unit_rate || 0,
-          taxas_origem: q.taxas_origem || 0,
-          pickup_fee: q.pickup_fee || 0,
-          destination_taxes: q.destination_taxes || 0,
-          taxas_adicionais: [
-            { tipo: 'por_embarque', valor: q.additional_fees || 0, descricao: 'Outras Taxas' },
-          ],
-        },
-      }))
+      const previewDataToRank = mappedQuotes.map((q, idx) => {
+        const isMaritimo = q.modal === 'FCL' || q.modal === 'LCL'
+        return {
+          id: `preview-${idx}`,
+          agent_name: q.agent_name || '',
+          modal: q.modal || 'Aéreo',
+          cost: q.cost || 0,
+          taxable_weight: q.taxable_weight || 0,
+          transit_time: q.transit_time || 0,
+          cost_breakdown: isMaritimo
+            ? q.cost_breakdown
+            : {
+                ...q.cost_breakdown,
+                frete_unitario: q.unit_rate || 0,
+                taxas_origem: q.taxas_origem || 0,
+                pickup_fee: q.pickup_fee || 0,
+                destination_taxes: q.destination_taxes || 0,
+                taxas_adicionais: [
+                  {
+                    tipo: 'por_embarque',
+                    valor: q.additional_fees || 0,
+                    descricao: 'Outras Taxas',
+                  },
+                ],
+              },
+        }
+      })
 
-      const ranked = rankQuotations(previewDataToRank as any, ped)
+      const isMaritimoPed = ped.modal_desejado === 'FCL' || ped.modal_desejado === 'LCL'
+      const ranked = isMaritimoPed
+        ? rankMaritimo(previewDataToRank as any, ped)
+        : rankQuotations(previewDataToRank as any, ped)
 
       const round1 = await createCotacaoRound({
         pedido_id: pedidoId,
@@ -753,21 +775,24 @@ export default function Upload() {
         const preview = ranked.find((p) => p.id === `preview-${idx}`)
         const finalScore = preview?.calculatedScore || 0
         const compat = (preview?.compatScore || 0) * 100
+        const isMaritimo = q.modal === 'FCL' || q.modal === 'LCL'
 
-        const updatedBreakdown = {
-          ...q.cost_breakdown,
-          frete_unitario: q.unit_rate,
-          taxas_origem: q.taxas_origem,
-          pickup_fee: q.pickup_fee,
-          destination_taxes: q.destination_taxes,
-          taxas_adicionais: [
-            {
-              tipo: 'por_embarque',
-              valor: q.additional_fees || 0,
-              descricao: 'Outras Taxas (Manual)',
-            },
-          ],
-        }
+        const updatedBreakdown = isMaritimo
+          ? q.cost_breakdown
+          : {
+              ...q.cost_breakdown,
+              frete_unitario: q.unit_rate,
+              taxas_origem: q.taxas_origem,
+              pickup_fee: q.pickup_fee,
+              destination_taxes: q.destination_taxes,
+              taxas_adicionais: [
+                {
+                  tipo: 'por_embarque',
+                  valor: q.additional_fees || 0,
+                  descricao: 'Outras Taxas (Manual)',
+                },
+              ],
+            }
 
         const createdQ = await createQuotation({
           agent_name: q.agent_name,
@@ -775,9 +800,9 @@ export default function Upload() {
           cost: preview?.computedTotal || 0,
           transit_time: q.transit_time ?? undefined,
           free_time: q.free_time ?? undefined,
-          etd: q.etd ?? undefined,
+          etd: q.etd || undefined,
           taxable_weight: q.taxable_weight ?? undefined,
-          rate_unitario: q.unit_rate ?? undefined,
+          rate_unitario: isMaritimo ? undefined : (q.unit_rate ?? undefined),
           frequencia: q.frequencia ?? undefined,
           score: finalScore,
           compatibilidade_score: Math.round(compat),
