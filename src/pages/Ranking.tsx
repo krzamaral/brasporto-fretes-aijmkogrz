@@ -151,8 +151,22 @@ export default function Ranking() {
     )
   }
 
+  const isPlaceholder = (val: string | null | undefined) => {
+    if (!val) return true
+    const lower = String(val).toLowerCase().trim()
+    return ['não especificado', 'n/a', 'na', '-'].includes(lower)
+  }
+
   const pesoBruto = pedido.peso_bruto || 0
   const chargeableWeight = calculateChargeableWeight(pedido)
+
+  const validQuotes = quotations.filter((q) => !q.isIncompleteData)
+  let recommended = validQuotes.find((q) => q.isBestBalance)
+  if (!recommended) recommended = validQuotes.find((q) => q.isCheapest)
+  if (!recommended) recommended = validQuotes[0]
+
+  const cheapest = validQuotes.find((q) => q.isCheapest)
+  const showCheapestAlt = cheapest && recommended && cheapest.id !== recommended.id
 
   const top1 = quotations[0]
   const top2 = quotations[1]
@@ -297,6 +311,67 @@ export default function Ranking() {
         <div className="print-hidden">
           <Stepper currentStep={5} />
         </div>
+        {/* Executive Summary Block */}
+        {recommended && (
+          <div className="bg-[#f0f7ff] border border-blue-200 rounded-sm p-4 print:break-inside-avoid shadow-sm print:shadow-none print:border-blue-300">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Trophy className="h-5 w-5 text-yellow-500" />
+                  <h3 className="font-bold text-blue-900 uppercase tracking-wider text-sm">
+                    Opção Recomendada
+                  </h3>
+                </div>
+                <p className="text-xl md:text-2xl font-black text-blue-950">
+                  {recommended.agent_name}{' '}
+                  {recommended.option_description ? `- ${recommended.option_description}` : ''}
+                </p>
+                <div className="flex items-center gap-3 text-sm text-blue-800 mt-1 font-medium">
+                  <span>
+                    Transit Time:{' '}
+                    {recommended.transit_time ? `${recommended.transit_time} dias` : 'N/A'}
+                  </span>
+                  {recommended.frequencia && (
+                    <>
+                      <span className="w-1 h-1 bg-blue-300 rounded-full"></span>
+                      <span className="capitalize">
+                        {recommended.frequencia.replace(/_/g, ' ')}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="text-left md:text-right bg-white px-4 py-2 rounded border border-blue-100 shadow-sm print:border-blue-300">
+                <p className="text-xs font-bold text-blue-500 uppercase">Custo Total All-In</p>
+                <p className="text-2xl font-black text-indigo-700">
+                  USD {recommended.computedTotal.toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            {showCheapestAlt && (
+              <div className="mt-4 pt-3 border-t border-blue-200 flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                <div>
+                  <h4 className="text-xs font-bold text-blue-800 uppercase mb-0.5">
+                    Alternativa mais barata
+                  </h4>
+                  <p className="text-sm font-semibold text-blue-900">
+                    {cheapest.agent_name}{' '}
+                    {cheapest.option_description ? `- ${cheapest.option_description}` : ''}
+                  </p>
+                  <p className="text-xs text-blue-700">
+                    Transit Time: {cheapest.transit_time ? `${cheapest.transit_time} dias` : 'N/A'}
+                  </p>
+                </div>
+                <div className="text-left sm:text-right mt-2 sm:mt-0 bg-white/50 px-3 py-1.5 rounded">
+                  <p className="text-sm font-black text-emerald-600">
+                    USD {cheapest.computedTotal.toFixed(2)}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {/* 3 Columns Data Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 print:grid-cols-3 gap-4 items-stretch">
           {/* Column 1 */}
@@ -328,14 +403,17 @@ export default function Ranking() {
                     <Td>{pedido.prazo_desejado_dias} dias</Td>
                   </tr>
                 ) : null}
-                {pedido.tipo_mercadoria ? (
+                {!isPlaceholder(pedido.tipo_mercadoria) ? (
                   <tr>
                     <LabelTd>Mercadoria:</LabelTd>
                     <Td>{pedido.tipo_mercadoria}</Td>
                   </tr>
                 ) : null}
                 {(pedido.itens && pedido.itens.length > 0) ||
-                (pedido.comprimento && pedido.largura && pedido.altura) ? (
+                (pedido.comprimento &&
+                  pedido.largura &&
+                  pedido.altura &&
+                  !isPlaceholder(String(pedido.comprimento))) ? (
                   <tr>
                     <LabelTd>Dimensões:</LabelTd>
                     <Td>
