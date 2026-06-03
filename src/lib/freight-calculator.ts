@@ -220,8 +220,8 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
   const enriched = quotations.map((q) => {
     let isIncompleteData = false
     const cb = (q.cost_breakdown as any) || {}
-    const totalsInformed = cb.totals_informed || []
-    const surcharges = cb.surcharges || []
+    const totalsInformed = Array.isArray(cb.totals_informed) ? cb.totals_informed : []
+    const surcharges = Array.isArray(cb.surcharges) ? cb.surcharges : []
 
     const allTotalInfo = totalsInformed.find((t: any) => (t.section || '').toLowerCase() === 'all')
 
