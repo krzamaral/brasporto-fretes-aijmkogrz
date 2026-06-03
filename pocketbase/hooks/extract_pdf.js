@@ -86,37 +86,35 @@ routerAdd(
     } else if (body.docType === 'cotacao_maritimo') {
       prompt = `Você é um assistente especializado em logística. Extraia as informações do seguinte e-mail ou PDF de cotação (FCL ou LCL) (resposta do agente).
     ATENÇÃO CRÍTICA:
-    1. Granularidade: Uma linha de tabela ou oferta distinta (ex: diferentes rotas/carriers ou tipos de container) deve ser UM objeto de cotação distinto. NUNCA agregue múltiplas opções num só objeto.
-    2. Sem Cálculos: NUNCA calcule custos totais. Retorne cost: null. O sistema extrai apenas o que o agente informou.
-    3. Moedas Múltiplas: Preserve a moeda original informada no documento para cada taxa (ex: USD, EUR, BRL).
-    4. Surcharges Marítimas: Mapeie as taxas para três seções específicas dentro de um objeto "surcharges":
-       - "origin": Custos locais na origem, pré-transporte, taxas de BL, THC de origem, EXW pickup.
-       - "freight": Frete marítimo (Ocean Freight), BAF, EBS e demais taxas diretas do armador aplicadas ao frete internacional.
-       - "destination": Custos locais no destino, THC de destino, entrega.
-    5. Container Info (FCL): Extraia "container_type" (ex: 20FT, 40HC) e "container_quantity". Se for LCL, preencha com null.
-    6. Transit Time & Validade: Extraia "transit_time_min", "transit_time_max" (ambos numbers), "free_time_days" (number) e "validity_date" (formato YYYY-MM-DD).
-    7. Frequência (frequencia): mapeie qualquer menção de periodicidade para: 'daily', '3x_semana', '1x_semana', 'sob_consulta', ou null se não houver.
-    8. Totais Informados: Se o documento exibir totais ou subtotais, extraia para "totals_informed" contendo "all", "origin", "freight" e "destination" (cada um com { currency, amount }).
-    9. Exclusões: Crie um array de strings "exclusions" com itens não inclusos mencionados (ex: seguro, armazenagem).
+    1. Agent Name: Extraia o nome do remetente/agente que está enviando a cotação (ex: "Craft Multi", "Patto Logistics"). É ESTRITAMENTE PROIBIDO usar "BRASPORTO" (ou variações) como agent_name, pois a Brasporto é o cliente.
+    2. Granularidade: Uma linha de tabela ou oferta distinta (ex: diferentes rotas/carriers ou tipos de container) deve ser UM objeto de cotação distinto. NUNCA agregue múltiplas opções num só objeto.
+    3. Sem Cálculos: NUNCA calcule custos totais. Retorne cost: null. O sistema extrai apenas o que o agente informou.
+    4. Moedas Múltiplas: Preserve a moeda original informada no documento para cada taxa (ex: USD, EUR, BRL).
+    5. Surcharges Marítimas (Array Plano): Retorne 'surcharges' como um array plano de objetos, NÃO como um objeto aninhado. Cada objeto deve ter 'description' (string), 'amount' (number), 'currency' (string) e 'section' (string). A chave 'section' DEVE ser estritamente "origin", "freight" ou "destination".
+    6. Container Info (FCL): Extraia "container_type" (ex: "20FT", "40HC") e "container_quantity" apenas para FCL. Se for LCL, preencha ambos com null.
+    7. Transit Time & Validade: Extraia "transit_time_min", "transit_time_max" (ambos numbers), "free_time_days" (number) e "validity_date" (formato YYYY-MM-DD ou null).
+    8. Frequência (frequencia): mapeie qualquer menção de periodicidade para: "daily", "3x_semana", "1x_semana", "sob_consulta", ou null se não houver.
+    9. Totais Informados (Array Plano): Se o documento exibir totais ou subtotais, extraia para 'totals_informed' como um array plano de objetos com 'amount' (number), 'currency' (string) e 'section' (string: "all", "origin", "freight" ou "destination").
+    10. Exclusões: Crie um array plano de strings "exclusions" com itens não inclusos mencionados (ex: seguro, armazenagem).
 
-    Retorne um JSON com a chave "quotations" contendo um array de objetos. Cada objeto deve ter:
-    - agent_name: string (nome do agente)
-    - carrier: string (companhia marítima, se houver)
-    - pol: string (Port of Loading)
-    - pod: string (Port of Discharge)
+    Retorne um JSON com a chave "quotations" contendo um array de objetos. Cada objeto deve ter exatamente:
+    - agent_name: string (NUNCA "BRASPORTO")
+    - carrier: string ou null
     - modal: string ("FCL" ou "LCL")
+    - pol: string
+    - pod: string
+    - incoterm: string
     - container_type: string ou null
     - container_quantity: number ou null
+    - transit_time_min: number
+    - transit_time_max: number
+    - free_time_days: number
+    - frequencia: "daily" | "3x_semana" | "1x_semana" | "sob_consulta" | null
+    - validity_date: string (YYYY-MM-DD) ou null
+    - surcharges: array plano de { description: string, amount: number, currency: string, section: "origin"|"freight"|"destination" }
+    - totals_informed: array plano de { amount: number, currency: string, section: "all"|"origin"|"freight"|"destination" }
+    - exclusions: array plano de strings
     - cost: null
-    - transit_time_min: number (em dias)
-    - transit_time_max: number (em dias)
-    - free_time_days: number (em dias)
-    - validity_date: string (formato YYYY-MM-DD)
-    - frequencia: 'daily' | '3x_semana' | '1x_semana' | 'sob_consulta' | null
-    - incoterm: string (ex: "EXW", "FOB", etc.)
-    - surcharges: objeto com { origin: [], freight: [], destination: [] }. Os arrays contém { type: string, description: string, currency: string, amount: number, per_unit: boolean }
-    - totals_informed: objeto { all: { currency: string, amount: number }, origin: {...}, freight: {...}, destination: {...} } (apenas se fornecido pelo agente)
-    - exclusions: array de strings (itens não inclusos)
 
     Texto do documento:
     """
