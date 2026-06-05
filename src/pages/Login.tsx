@@ -67,7 +67,7 @@ export default function Login() {
 
         {/* Content */}
         <div className="relative z-10 max-w-2xl text-white animate-slide-in-up">
-          <div className="mb-10 inline-block rounded-xl bg-white/95 backdrop-blur-sm border border-white/30 p-5 shadow-xl">
+          <div className="mb-10 inline-block rounded-xl bg-white/95 backdrop-blur-sm border border-white/30 p-5 shadow-xl bg-[#ffffff]">
             <img
               src={logoUrl}
               alt="Brasporto International Logistics"
