@@ -45,7 +45,7 @@ import { createCotacaoRound } from '@/services/cotacao_rounds'
 import { createQuotation } from '@/services/quotations'
 import { useAuth } from '@/hooks/use-auth'
 import * as pdfjsLib from 'pdfjs-dist'
-import { rankQuotations, rankMaritimo } from '@/lib/freight-calculator'
+import { rankQuotations, rankMaritimo, toUSD } from '@/lib/freight-calculator'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`
 
@@ -119,6 +119,16 @@ type QuoteFile = {
   status: 'pending' | 'loading' | 'success' | 'error'
   errorMessage?: string
   quotes?: any[]
+}
+
+const sumSectionUSD = (surcharges: any[], section: string) => {
+  if (!Array.isArray(surcharges)) return 0
+  return surcharges
+    .filter((s: any) => (s.section || '').toLowerCase() === section)
+    .reduce((acc: number, s: any) => {
+      const val = Number(s.amount) || 0
+      return acc + toUSD(val, s.currency || 'USD')
+    }, 0)
 }
 
 const validateIncotermCoherence = (incoterm: string, quote: any) => {
@@ -1077,6 +1087,18 @@ export default function Upload() {
               const origemDisplay =
                 q.formula_origem || (q.taxas_origem ? `${currency} ${q.taxas_origem}` : 'N/A')
 
+              const cb = q.cost_breakdown || {}
+              const surcharges = Array.isArray(cb.surcharges) ? cb.surcharges : []
+              const originUSD = sumSectionUSD(surcharges, 'origin')
+              const freightUSD = sumSectionUSD(surcharges, 'freight')
+              const destinationUSD = sumSectionUSD(surcharges, 'destination')
+              const totalEstUSD = originUSD + freightUSD + destinationUSD
+              const sectionsCount = new Set(
+                surcharges.map((s: any) => (s.section || '').toLowerCase()),
+              ).size
+              const surchargesCount = surcharges.length
+              const wmBilled = cb.wm_units_billed
+
               return (
                 <Card
                   key={idx}
@@ -1104,10 +1126,28 @@ export default function Upload() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm text-slate-500 mb-0.5">Rate</div>
-                      <span className="text-xl font-bold text-slate-800">
-                        {currency} {freteUnitario.toFixed(2)}
-                      </span>
+                      {isMaritimo ? (
+                        <>
+                          <div className="text-sm text-slate-500 mb-0.5 flex items-center justify-end gap-2">
+                            {destinationUSD === 0 && (
+                              <span className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0.5 rounded border border-amber-200 font-medium">
+                                sem destino
+                              </span>
+                            )}
+                            Total Est.
+                          </div>
+                          <span className="text-xl font-bold text-slate-800">
+                            USD {totalEstUSD.toFixed(2)}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-sm text-slate-500 mb-0.5">Rate</div>
+                          <span className="text-xl font-bold text-slate-800">
+                            {currency} {freteUnitario.toFixed(2)}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1116,28 +1156,68 @@ export default function Upload() {
                       <span className="text-xs text-slate-400">Transit Time</span>
                       <span className="text-sm font-medium text-slate-700">{ttDisplay}</span>
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs text-slate-400">Origem / EXW</span>
-                      <span
-                        className="text-sm font-medium text-slate-700 truncate"
-                        title={origemDisplay}
-                      >
-                        {origemDisplay}
-                      </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs text-slate-400">Opções Pickup</span>
-                      <span className="text-sm font-medium text-slate-700">
-                        {pickupCount} encontrada(s)
-                      </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs text-slate-400">Taxas Adicionais</span>
-                      <span className="text-sm font-medium text-slate-700">
-                        {adicCount} extraída(s)
-                      </span>
-                    </div>
+                    {isMaritimo ? (
+                      <>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-slate-400">Origem</span>
+                          <span className="text-sm font-medium text-slate-700">
+                            USD {originUSD.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-slate-400">Frete</span>
+                          <span className="text-sm font-medium text-slate-700">
+                            USD {freightUSD.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-slate-400">Destino</span>
+                          <span
+                            className={`text-sm font-medium ${destinationUSD === 0 ? 'text-amber-700' : 'text-slate-700'}`}
+                          >
+                            {destinationUSD === 0 ? 'faltando' : `USD ${destinationUSD.toFixed(2)}`}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-slate-400">Origem / EXW</span>
+                          <span
+                            className="text-sm font-medium text-slate-700 truncate"
+                            title={origemDisplay}
+                          >
+                            {origemDisplay}
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-slate-400">Opções Pickup</span>
+                          <span className="text-sm font-medium text-slate-700">
+                            {pickupCount} encontrada(s)
+                          </span>
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-slate-400">Taxas Adicionais</span>
+                          <span className="text-sm font-medium text-slate-700">
+                            {adicCount} extraída(s)
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </div>
+
+                  {isMaritimo && q.modal === 'LCL' && (
+                    <div className="text-xs text-slate-500 flex items-center gap-1.5 -mt-1">
+                      <span className="font-medium text-slate-700">W/M faturado:</span>
+                      <span className="font-semibold">
+                        {wmBilled !== undefined && wmBilled !== null ? wmBilled : 'N/A'}
+                      </span>
+                      <span className="text-slate-300">/</span>
+                      <span>
+                        {surchargesCount} surcharges em {sectionsCount} seções
+                      </span>
+                    </div>
+                  )}
 
                   {warnings && warnings.length > 0 && (
                     <div className="space-y-2">
