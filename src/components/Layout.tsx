@@ -1,13 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/use-auth'
-import {
-  LayoutDashboard,
-  UploadCloud,
-  Trophy,
-  History as HistoryIcon,
-  LogOut,
-  Menu,
-} from 'lucide-react'
+import { LayoutDashboard, History as HistoryIcon, LogOut, Menu } from 'lucide-react'
 import logoUrl from '@/assets/logo-color-ad1d0.png'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
@@ -23,8 +16,6 @@ import { useState } from 'react'
 
 const MENU_ITEMS = [
   { title: 'Dashboard', icon: LayoutDashboard, url: '/dashboard' },
-  { title: 'Upload', icon: UploadCloud, url: '/upload' },
-  { title: 'Ranking', icon: Trophy, url: '/ranking' },
   { title: 'Histórico', icon: HistoryIcon, url: '/history' },
 ]
 

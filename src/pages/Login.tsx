@@ -67,11 +67,16 @@ export default function Login() {
 
         {/* Content */}
         <div className="relative z-10 max-w-2xl text-white animate-slide-in-up">
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold tracking-tight">BRASPORTO</h2>
-            <p className="text-sm font-medium uppercase tracking-widest text-white/80">
-              International Logistics
-            </p>
+          <div className="mb-8 flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 p-2 shadow-lg">
+              <img src={logoUrl} alt="Brasporto" className="h-full w-full object-contain" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-bold tracking-tight">BRASPORTO</h2>
+              <p className="text-sm font-medium uppercase tracking-widest text-white/80">
+                International Logistics
+              </p>
+            </div>
           </div>
 
           {/* Decorative Bar */}
