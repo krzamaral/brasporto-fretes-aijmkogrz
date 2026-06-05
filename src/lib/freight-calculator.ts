@@ -321,13 +321,19 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
       wmRateUsd =
         rawWmRate !== null && !isNaN(rawWmRate) ? toUSD(rawWmRate, cb.wm_currency || 'USD') : null
 
-      if (wmBilled !== null && wmExpected !== null) {
+      if (wmBilled !== null && wmBilled > 0 && wmExpected !== null) {
         if (wmBilled > wmExpected) wmBillingFlag = 'overbilled'
         else if (wmBilled < wmExpected) wmBillingFlag = 'underbilled'
         else wmBillingFlag = 'ok'
       }
 
-      if (wmBilled !== null && wmRateUsd !== null && wmExpected !== null) {
+      if (
+        wmBilled !== null &&
+        wmBilled > 0 &&
+        wmRateUsd !== null &&
+        wmRateUsd > 0 &&
+        wmExpected !== null
+      ) {
         const totalWm = wmBilled * wmRateUsd
         addTaxesLog.push(
           `W/M: ${wmBilled} × USD ${wmRateUsd.toFixed(2)}/WM = USD ${totalWm.toFixed(2)} (esperado: ${wmExpected} W/M)`,

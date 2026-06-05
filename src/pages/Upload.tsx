@@ -1088,7 +1088,11 @@ export default function Upload() {
                 q.formula_origem || (q.taxas_origem ? `${currency} ${q.taxas_origem}` : 'N/A')
 
               const cb = q.cost_breakdown || {}
-              const surcharges = Array.isArray(cb.surcharges) ? cb.surcharges : []
+              const surcharges = Array.isArray(q.surcharges)
+                ? q.surcharges
+                : Array.isArray(cb.surcharges)
+                  ? cb.surcharges
+                  : []
               const originUSD = sumSectionUSD(surcharges, 'origin')
               const freightUSD = sumSectionUSD(surcharges, 'freight')
               const destinationUSD = sumSectionUSD(surcharges, 'destination')
@@ -1097,7 +1101,8 @@ export default function Upload() {
                 surcharges.map((s: any) => (s.section || '').toLowerCase()),
               ).size
               const surchargesCount = surcharges.length
-              const wmBilled = cb.wm_units_billed
+              const wmBilled =
+                q.wm_units_billed !== undefined ? q.wm_units_billed : cb.wm_units_billed
 
               return (
                 <Card
