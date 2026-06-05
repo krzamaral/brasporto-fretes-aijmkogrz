@@ -5,6 +5,10 @@ export const getQuotations = (): Promise<RecordModel[]> => {
   return pb.collection('quotations').getFullList()
 }
 
+export const getHistoryQuotations = (): Promise<RecordModel[]> => {
+  return pb.collection('quotations').getFullList({ sort: '-created' })
+}
+
 export const getQuotationsByPedido = (pedidoId: string): Promise<RecordModel[]> => {
   return pb.collection('quotations').getFullList({
     filter: `pedido_id = "${pedidoId}"`,
