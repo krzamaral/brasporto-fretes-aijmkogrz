@@ -10,6 +10,7 @@ export interface Pedido {
   largura?: number | null
   altura?: number | null
   quantidade_containers?: number | null
+  container_type?: '20FT' | '40FT' | '40HC' | 'REEFER' | null
   itens?: Array<{
     comprimento: number
     largura: number

@@ -25,6 +25,7 @@ routerAdd(
     - peso_bruto: number (em kg)
     - volume: number (em m³)
     - quantidade_containers: number
+    - container_type: string ("20FT", "40FT", "40HC", "REEFER" ou null)
     - tipo_mercadoria: string
     - modal_desejado: string ("Aéreo", "FCL" ou "LCL")
     - incoterm: string (ex: "EXW", "FOB", etc.)

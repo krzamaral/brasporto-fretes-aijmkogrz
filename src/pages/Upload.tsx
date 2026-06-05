@@ -62,6 +62,7 @@ const pedidoSchema = z
       .number({ invalid_type_error: 'Deve ser um número' })
       .nullable()
       .optional(),
+    container_type: z.enum(['20FT', '40FT', '40HC', 'REEFER']).nullable().optional(),
     itens: z
       .array(
         z.object({
@@ -106,6 +107,13 @@ const pedidoSchema = z
         code: z.ZodIssueCode.custom,
         message: 'Obrigatório para FCL',
         path: ['quantidade_containers'],
+      })
+    }
+    if (data.modal_desejado === 'FCL' && !data.container_type) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Obrigatório para FCL',
+        path: ['container_type'],
       })
     }
   })
@@ -209,6 +217,7 @@ export default function Upload() {
       largura: null,
       altura: null,
       quantidade_containers: null,
+      container_type: null,
       itens: [],
       tipo_mercadoria: '',
       modal_desejado: 'Aéreo',
@@ -325,6 +334,9 @@ export default function Upload() {
         altura: extracted?.altura ? Number(extracted.altura) : null,
         quantidade_containers: extracted?.quantidade_containers
           ? Number(extracted.quantidade_containers)
+          : null,
+        container_type: ['20FT', '40FT', '40HC', 'REEFER'].includes(extracted?.container_type)
+          ? extracted.container_type
           : null,
         itens: Array.isArray(extracted?.itens)
           ? extracted.itens.map((i: any) => ({
@@ -888,6 +900,7 @@ export default function Upload() {
         quantidade_containers: data.quantidade_containers
           ? Number(data.quantidade_containers)
           : null,
+        container_type: data.container_type,
         itens: data.itens,
         tipo_mercadoria: data.tipo_mercadoria || '',
         modal_desejado: ['Aéreo', 'FCL', 'LCL'].includes(data.modal_desejado)
@@ -1352,6 +1365,16 @@ export default function Upload() {
                     </FormItem>
                   )}
                 />
+                {watchedModal === 'FCL' && (
+                  <div className="col-span-1 md:col-span-2 bg-sky-50 border border-sky-200 p-3 rounded-md flex gap-2.5 text-sky-900 text-sm items-start">
+                    <Info className="h-5 w-5 shrink-0 text-sky-600 mt-0.5" />
+                    <p>
+                      Em <strong>FCL</strong> a cobrança é por container — volume e dimensões da
+                      carga não são necessários. Informe abaixo o <strong>tipo</strong> e{' '}
+                      <strong>quantidade</strong> de containers.
+                    </p>
+                  </div>
+                )}
                 <FormField
                   control={form.control}
                   name="peso_bruto"
@@ -1381,210 +1404,220 @@ export default function Upload() {
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="volume"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        Volume (m³){' '}
-                        {watchedModal === 'LCL' && <span className="text-red-500">*</span>}
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          {...field}
-                          value={field.value ?? ''}
-                          onChange={(e) =>
-                            field.onChange(e.target.value ? parseFloat(e.target.value) : null)
-                          }
-                          className={
-                            watchedModal === 'LCL' && (field.value == null || field.value <= 0)
-                              ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
-                              : ''
-                          }
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="col-span-1 md:col-span-2 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <FormLabel className="text-base">Dimensões / Caixas</FormLabel>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        appendItem({ comprimento: 0, largura: 0, altura: 0, quantidade: 1 })
-                      }
-                      className="text-xs h-8"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1" /> Add Volume
-                    </Button>
-                  </div>
+                {watchedModal !== 'FCL' && (
+                  <FormField
+                    control={form.control}
+                    name="volume"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          Volume (m³){' '}
+                          {watchedModal === 'LCL' && <span className="text-red-500">*</span>}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            {...field}
+                            value={field.value ?? ''}
+                            onChange={(e) =>
+                              field.onChange(e.target.value ? parseFloat(e.target.value) : null)
+                            }
+                            className={
+                              watchedModal === 'LCL' && (field.value == null || field.value <= 0)
+                                ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
+                                : ''
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+                {watchedModal !== 'FCL' && (
+                  <div className="col-span-1 md:col-span-2 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <FormLabel className="text-base">Dimensões / Caixas</FormLabel>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          appendItem({ comprimento: 0, largura: 0, altura: 0, quantidade: 1 })
+                        }
+                        className="text-xs h-8"
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" /> Add Volume
+                      </Button>
+                    </div>
 
-                  {itensFields.length > 0 ? (
-                    <div className="space-y-3">
-                      {itensFields.map((field, index) => (
-                        <div
-                          key={field.id}
-                          className="flex gap-2 items-end bg-slate-50 p-3 rounded-lg border border-slate-100"
-                        >
-                          <FormField
-                            control={form.control}
-                            name={`itens.${index}.quantidade`}
-                            render={({ field }) => (
-                              <FormItem className="flex-1">
-                                <FormLabel className="text-xs">Qtd</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    {...field}
-                                    onChange={(e) =>
-                                      field.onChange(parseFloat(e.target.value) || 0)
-                                    }
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`itens.${index}.comprimento`}
-                            render={({ field }) => (
-                              <FormItem className="flex-1">
-                                <FormLabel className="text-xs">Comp (cm)</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    step="0.1"
-                                    {...field}
-                                    onChange={(e) =>
-                                      field.onChange(parseFloat(e.target.value) || 0)
-                                    }
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`itens.${index}.largura`}
-                            render={({ field }) => (
-                              <FormItem className="flex-1">
-                                <FormLabel className="text-xs">Larg (cm)</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    step="0.1"
-                                    {...field}
-                                    onChange={(e) =>
-                                      field.onChange(parseFloat(e.target.value) || 0)
-                                    }
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`itens.${index}.altura`}
-                            render={({ field }) => (
-                              <FormItem className="flex-1">
-                                <FormLabel className="text-xs">Alt (cm)</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    step="0.1"
-                                    {...field}
-                                    onChange={(e) =>
-                                      field.onChange(parseFloat(e.target.value) || 0)
-                                    }
-                                  />
-                                </FormControl>
-                              </FormItem>
-                            )}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => removeItem(index)}
+                    {itensFields.length > 0 ? (
+                      <div className="space-y-3">
+                        {itensFields.map((field, index) => (
+                          <div
+                            key={field.id}
+                            className="flex gap-2 items-end bg-slate-50 p-3 rounded-lg border border-slate-100"
                           >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-3 gap-2">
-                      <FormField
-                        control={form.control}
-                        name="comprimento"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Comp (cm)</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                step="0.1"
-                                {...field}
-                                value={field.value ?? ''}
-                                onChange={(e) =>
-                                  field.onChange(e.target.value ? parseFloat(e.target.value) : null)
-                                }
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="largura"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Larg (cm)</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                step="0.1"
-                                {...field}
-                                value={field.value ?? ''}
-                                onChange={(e) =>
-                                  field.onChange(e.target.value ? parseFloat(e.target.value) : null)
-                                }
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="altura"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Alt (cm)</FormLabel>
-                            <FormControl>
-                              <Input
-                                type="number"
-                                step="0.1"
-                                {...field}
-                                value={field.value ?? ''}
-                                onChange={(e) =>
-                                  field.onChange(e.target.value ? parseFloat(e.target.value) : null)
-                                }
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  )}
-                </div>
+                            <FormField
+                              control={form.control}
+                              name={`itens.${index}.quantidade`}
+                              render={({ field }) => (
+                                <FormItem className="flex-1">
+                                  <FormLabel className="text-xs">Qtd</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      {...field}
+                                      onChange={(e) =>
+                                        field.onChange(parseFloat(e.target.value) || 0)
+                                      }
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name={`itens.${index}.comprimento`}
+                              render={({ field }) => (
+                                <FormItem className="flex-1">
+                                  <FormLabel className="text-xs">Comp (cm)</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      step="0.1"
+                                      {...field}
+                                      onChange={(e) =>
+                                        field.onChange(parseFloat(e.target.value) || 0)
+                                      }
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name={`itens.${index}.largura`}
+                              render={({ field }) => (
+                                <FormItem className="flex-1">
+                                  <FormLabel className="text-xs">Larg (cm)</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      step="0.1"
+                                      {...field}
+                                      onChange={(e) =>
+                                        field.onChange(parseFloat(e.target.value) || 0)
+                                      }
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name={`itens.${index}.altura`}
+                              render={({ field }) => (
+                                <FormItem className="flex-1">
+                                  <FormLabel className="text-xs">Alt (cm)</FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      step="0.1"
+                                      {...field}
+                                      onChange={(e) =>
+                                        field.onChange(parseFloat(e.target.value) || 0)
+                                      }
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => removeItem(index)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2">
+                        <FormField
+                          control={form.control}
+                          name="comprimento"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Comp (cm)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  {...field}
+                                  value={field.value ?? ''}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      e.target.value ? parseFloat(e.target.value) : null,
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="largura"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Larg (cm)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  {...field}
+                                  value={field.value ?? ''}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      e.target.value ? parseFloat(e.target.value) : null,
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="altura"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Alt (cm)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.1"
+                                  {...field}
+                                  value={field.value ?? ''}
+                                  onChange={(e) =>
+                                    field.onChange(
+                                      e.target.value ? parseFloat(e.target.value) : null,
+                                    )
+                                  }
+                                />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
                 <FormField
                   control={form.control}
                   name="tipo_mercadoria"
@@ -1666,28 +1699,61 @@ export default function Upload() {
                   )}
                 />
                 {watchedModal === 'FCL' && (
-                  <FormField
-                    control={form.control}
-                    name="quantidade_containers"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          Qtd de Containers <span className="text-red-500">*</span>
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            {...field}
-                            value={field.value ?? ''}
-                            onChange={(e) =>
-                              field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="container_type"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            Tipo de Container <span className="text-red-500">*</span>
+                          </FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || undefined}>
+                            <FormControl>
+                              <SelectTrigger
+                                className={
+                                  !field.value
+                                    ? 'border-amber-400 ring-1 ring-amber-200 bg-amber-50/30'
+                                    : ''
+                                }
+                              >
+                                <SelectValue placeholder="Selecione o tipo" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="20FT">20FT (Standard)</SelectItem>
+                              <SelectItem value="40FT">40FT (Standard)</SelectItem>
+                              <SelectItem value="40HC">40HC (High Cube)</SelectItem>
+                              <SelectItem value="REEFER">REEFER (Refrigerado)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="quantidade_containers"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>
+                            Qtd de Containers <span className="text-red-500">*</span>
+                          </FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              {...field}
+                              value={field.value ?? ''}
+                              onChange={(e) =>
+                                field.onChange(e.target.value ? parseInt(e.target.value, 10) : null)
+                              }
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
                 )}
                 <FormField
                   control={form.control}

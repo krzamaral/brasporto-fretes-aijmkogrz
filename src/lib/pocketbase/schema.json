@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-05T13:56:53.526Z",
+  "generatedAt": "2026-06-05T14:34:20.970Z",
   "collections": [
     {
       "name": "users",
@@ -357,6 +357,13 @@
           "type": "json",
           "required": false,
           "system": false
+        },
+        {
+          "name": "container_type",
+          "type": "select",
+          "required": false,
+          "system": false,
+          "selectValues": ["20FT", "40FT", "40HC", "REEFER"]
         }
       ],
       "indexes": []
