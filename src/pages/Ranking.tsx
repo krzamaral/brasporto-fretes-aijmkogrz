@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   FileDown,
   Bot,
@@ -30,6 +30,7 @@ import {
 
 export default function Ranking() {
   const location = useLocation()
+  const [searchParams] = useSearchParams()
   const { toast } = useToast()
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -40,7 +41,7 @@ export default function Ranking() {
   const [aiComment, setAiComment] = useState<string>('')
 
   const loadData = async () => {
-    const pedidoId = location.state?.pedidoId
+    const pedidoId = location.state?.pedidoId || searchParams.get('pedidoId')
     if (!pedidoId) {
       navigate('/dashboard')
       return
@@ -82,7 +83,7 @@ export default function Ranking() {
 
   useEffect(() => {
     loadData()
-  }, [location.state?.pedidoId, navigate])
+  }, [location.state?.pedidoId, searchParams, navigate])
 
   useRealtime('quotations', () => {
     loadData()

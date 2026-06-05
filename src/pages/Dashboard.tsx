@@ -130,7 +130,7 @@ export default function Dashboard() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-            {greeting}, {user?.name?.split(' ')[0] || 'Usuário'}
+            {greeting}, {user?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'Usuário'}
           </h1>
           <p className="text-slate-500 mt-1">
             Gerencie cotações de frete em um só lugar — Air, FCL e LCL.
@@ -138,7 +138,8 @@ export default function Dashboard() {
         </div>
         <Button
           onClick={() => navigate('/upload')}
-          className="bg-blue-600 hover:bg-blue-700 h-11 px-6 shadow-md"
+          size="lg"
+          className="bg-blue-600 hover:bg-blue-700 text-white h-12 px-6 text-base font-semibold shadow-lg hover:shadow-xl ring-2 ring-blue-600/20 ring-offset-2 transition-all"
         >
           <Plus className="mr-2 h-5 w-5" />
           Nova Cotação
