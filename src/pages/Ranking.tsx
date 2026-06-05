@@ -579,7 +579,7 @@ export default function Ranking() {
                 <Th>Transit Time</Th>
                 <Th>Frequência</Th>
                 <Th>Prazo OK</Th>
-                <Th>Destino OK</Th>
+                <Th>Destino</Th>
               </tr>
             </thead>
             <tbody>
@@ -664,7 +664,23 @@ export default function Ranking() {
                     >
                       {prazoOk ? 'OK' : 'NÃO'}
                     </Td>
-                    <Td className="text-green-600 font-bold bg-green-50/50">SIM</Td>
+                    <Td
+                      className={cn(
+                        'font-bold',
+                        (q.modal === 'FCL' || q.modal === 'LCL') && !(q.destinationTaxes > 0)
+                          ? 'text-amber-700 bg-amber-50/60 cursor-help'
+                          : 'text-green-600 bg-green-50/50',
+                      )}
+                      title={
+                        (q.modal === 'FCL' || q.modal === 'LCL') && !(q.destinationTaxes > 0)
+                          ? 'Cotação não tem taxas de destino — total provavelmente subestimado'
+                          : undefined
+                      }
+                    >
+                      {(q.modal === 'FCL' || q.modal === 'LCL') && !(q.destinationTaxes > 0)
+                        ? 'FALTA'
+                        : 'OK'}
+                    </Td>
                     <Td className="print-hidden w-28 text-center p-1">
                       <select
                         className="w-full text-xs p-1 border rounded bg-white text-slate-800"
