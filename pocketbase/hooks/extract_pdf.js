@@ -96,6 +96,7 @@ routerAdd(
     8. Frequência (frequencia): mapeie qualquer menção de periodicidade para: "daily", "3x_semana", "1x_semana", "sob_consulta", ou null se não houver.
     9. Totais Informados (Array Plano): Se o documento exibir totais ou subtotais, extraia para 'totals_informed' como um array plano de objetos com 'amount' (number), 'currency' (string) e 'section' (string: "all", "origin", "freight" ou "destination").
     10. Exclusões: Crie um array plano de strings "exclusions" com itens não inclusos mencionados (ex: seguro, armazenagem).
+    11. Unit Rate W/M (APENAS LCL): Extraia "wm_rate_usd" (number) como a tarifa por W/M (se houver múltiplas taxas cobradas por W/M, como Ocean Freight + ISPS + BAF, some-as num único valor numérico); "wm_units_billed" (number) como o total de unidades (ton/m³) que o agente considerou para a cobrança, extraído do texto (NUNCA calcule isso com base nas dimensões, extraia apenas se o agente informou explicitamente); e "wm_rate_currency" (string) como a moeda do unit rate (padrão "USD" se não especificado ou se for USD). Se o modal for "FCL", você DEVE preencher "wm_rate_usd", "wm_units_billed" e "wm_rate_currency" estritamente com null.
 
     Retorne um JSON com a chave "quotations" contendo um array de objetos. Cada objeto deve ter exatamente:
     - agent_name: string (NUNCA "BRASPORTO")
@@ -115,6 +116,9 @@ routerAdd(
     - totals_informed: array plano de { amount: number, currency: string, section: "all"|"origin"|"freight"|"destination" }
     - exclusions: array plano de strings
     - cost: null
+    - wm_rate_usd: number ou null
+    - wm_units_billed: number ou null
+    - wm_rate_currency: string ou null
 
     Texto do documento:
     """
