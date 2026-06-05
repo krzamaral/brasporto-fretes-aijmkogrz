@@ -188,6 +188,10 @@ export type EnrichedQuotation = Quotation & {
   isCheapest: boolean
   isBestBalance: boolean
   subjectToReconfirmation: boolean
+  dataConfidence?: 'high' | 'medium' | 'low'
+  missingDestination?: boolean
+  sectionsCount?: number
+  surchargesCount?: number
 }
 
 export const FX_TO_USD: Record<string, number> = {
@@ -230,35 +234,63 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
     let freteTotal = 0
     let destinationTaxes = 0
 
-    if (allTotalInfo && allTotalInfo.amount) {
+    const sumOrigin = sumSurchargesBySection(surcharges, 'origin')
+    const sumFreight = sumSurchargesBySection(surcharges, 'freight')
+    const sumDestination = sumSurchargesBySection(surcharges, 'destination')
+
+    const originInfo = totalsInformed.find((t: any) => (t.section || '').toLowerCase() === 'origin')
+    const freightInfo = totalsInformed.find(
+      (t: any) => (t.section || '').toLowerCase() === 'freight',
+    )
+    const destInfo = totalsInformed.find(
+      (t: any) => (t.section || '').toLowerCase() === 'destination',
+    )
+
+    appliedTaxasOrigem =
+      sumOrigin > 0
+        ? sumOrigin
+        : originInfo?.amount
+          ? toUSD(originInfo.amount, originInfo.currency || 'USD')
+          : 0
+    freteTotal =
+      sumFreight > 0
+        ? sumFreight
+        : freightInfo?.amount
+          ? toUSD(freightInfo.amount, freightInfo.currency || 'USD')
+          : 0
+    destinationTaxes =
+      sumDestination > 0
+        ? sumDestination
+        : destInfo?.amount
+          ? toUSD(destInfo.amount, destInfo.currency || 'USD')
+          : 0
+
+    computedTotal = appliedTaxasOrigem + freteTotal + destinationTaxes
+
+    if (computedTotal === 0 && allTotalInfo && allTotalInfo.amount) {
       computedTotal = toUSD(allTotalInfo.amount, allTotalInfo.currency || 'USD')
-      freteTotal = computedTotal
-    } else {
-      const originInfo = totalsInformed.find(
-        (t: any) => (t.section || '').toLowerCase() === 'origin',
-      )
-      const freightInfo = totalsInformed.find(
-        (t: any) => (t.section || '').toLowerCase() === 'freight',
-      )
-      const destInfo = totalsInformed.find(
-        (t: any) => (t.section || '').toLowerCase() === 'destination',
-      )
-
-      appliedTaxasOrigem = originInfo?.amount
-        ? toUSD(originInfo.amount, originInfo.currency)
-        : sumSurchargesBySection(surcharges, 'origin')
-      freteTotal = freightInfo?.amount
-        ? toUSD(freightInfo.amount, freightInfo.currency)
-        : sumSurchargesBySection(surcharges, 'freight')
-      destinationTaxes = destInfo?.amount
-        ? toUSD(destInfo.amount, destInfo.currency)
-        : sumSurchargesBySection(surcharges, 'destination')
-
-      computedTotal = appliedTaxasOrigem + freteTotal + destinationTaxes
+      appliedTaxasOrigem = 0
+      freteTotal = 0
+      destinationTaxes = 0
     }
 
     if (computedTotal === 0 && surcharges.length === 0 && totalsInformed.length === 0) {
       isIncompleteData = true
+    }
+
+    const presentSections = new Set(surcharges.map((s: any) => (s.section || '').toLowerCase()))
+    const hasOrigin = presentSections.has('origin')
+    const hasFreight = presentSections.has('freight')
+    const hasDestination = presentSections.has('destination')
+    const sectionsCount = [hasOrigin, hasFreight, hasDestination].filter(Boolean).length
+
+    let dataConfidence: 'high' | 'medium' | 'low' = 'low'
+    if (sectionsCount === 3 && surcharges.length >= 5) {
+      dataConfidence = 'high'
+    } else if (sectionsCount >= 2 && hasDestination) {
+      dataConfidence = 'medium'
+    } else {
+      dataConfidence = 'low'
     }
 
     const compatScore = q.modal === pedido.modal_desejado ? 1 : 0.5
@@ -295,6 +327,10 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
       isCheapest: false,
       isBestBalance: false,
       subjectToReconfirmation,
+      dataConfidence,
+      missingDestination: !hasDestination,
+      sectionsCount,
+      surchargesCount: surcharges.length,
     } as EnrichedQuotation & { freteUnitario: number; isEXW: boolean }
   })
 
@@ -307,11 +343,29 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
   const validForRanking = enriched.filter((q) => !q.isIncompleteData && q.computedTotal > 0)
 
   if (validForRanking.length > 0) {
-    const cheapest = validForRanking[0]
+    if (validForRanking.length >= 2) {
+      const cheapestValid = validForRanking[0]
+      const secondCheapest = validForRanking[1]
+      if (cheapestValid.computedTotal < secondCheapest.computedTotal * 0.5) {
+        cheapestValid.dataConfidence = 'low'
+      }
+    }
+
+    let cheapest = validForRanking[0]
+
+    if (cheapest.dataConfidence === 'low') {
+      const reliableOptions = validForRanking.filter(
+        (q) => q.dataConfidence !== 'low' && q.computedTotal <= cheapest.computedTotal * 1.5,
+      )
+      if (reliableOptions.length > 0) {
+        cheapest = reliableOptions[0]
+      }
+    }
+
     cheapest.isCheapest = true
 
     let bestBalance = cheapest
-    for (let i = 1; i < validForRanking.length; i++) {
+    for (let i = 0; i < validForRanking.length; i++) {
       const q = validForRanking[i]
       if (q.transit_time && cheapest.transit_time) {
         const timeDiffPct = (cheapest.transit_time - q.transit_time) / cheapest.transit_time
@@ -325,7 +379,7 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
     }
     bestBalance.isBestBalance = true
 
-    const minCost = cheapest.computedTotal
+    const minCost = Math.min(...validForRanking.map((q) => q.computedTotal))
     const minTransit = Math.min(...validForRanking.map((q) => q.transit_time || 999))
 
     enriched.forEach((q) => {
@@ -348,6 +402,16 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
           justificativa = `🏆 Opção Recomendada (Best Balance): Transit time ${(((cheapest.transit_time! - q.transit_time!) / cheapest.transit_time!) * 100).toFixed(0)}% menor com custo apenas ${(((q.computedTotal - cheapest.computedTotal) / cheapest.computedTotal) * 100).toFixed(0)}% maior que a mais barata.`
         } else if (q.isCheapest) {
           justificativa = `💰 Opção Mais Barata (Menor Custo Total All-In).`
+        }
+
+        if (q.dataConfidence === 'low') {
+          let warning = ''
+          if (q.missingDestination) {
+            warning = `⚠️ Cotação incompleta: sem taxas de destino (THC/capatazias/desconsol). Total provavelmente subestimado. Confirme com o agente antes de decidir.`
+          } else {
+            warning = `⚠️ Cotação com poucos detalhes extraídos (${q.surchargesCount} surcharges em ${q.sectionsCount} seções). Total pode estar incompleto. Confirme com o agente.`
+          }
+          justificativa = justificativa ? `${warning} ${justificativa}` : warning
         }
       }
 

@@ -1055,7 +1055,12 @@ export default function Upload() {
 
           <div className="space-y-4">
             {reviewQuotes?.map((q, idx) => {
-              const warnings = validateIncotermCoherence(reviewIncoterm, q)
+              const isMaritimo =
+                selectedModal === 'FCL' ||
+                selectedModal === 'LCL' ||
+                q.modal === 'FCL' ||
+                q.modal === 'LCL'
+              const warnings = isMaritimo ? null : validateIncotermCoherence(reviewIncoterm, q)
               const currency = q.currency || 'USD'
               const freteUnitario = Number(q.frete_unitario) || 0
               const ttMin = q.transit_time_min
