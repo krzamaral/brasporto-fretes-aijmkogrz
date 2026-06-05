@@ -109,7 +109,7 @@ export function calculateChargeableWeight(pedido: Pedido): number {
   const baseWeight = Math.max(pesoBruto / 1000, volume)
 
   if (pedido.modal_desejado === 'LCL') {
-    return Math.max(4, Math.ceil(baseWeight))
+    return Math.max(1, Math.ceil(baseWeight))
   }
 
   return baseWeight
@@ -192,6 +192,10 @@ export type EnrichedQuotation = Quotation & {
   missingDestination?: boolean
   sectionsCount?: number
   surchargesCount?: number
+  wmExpected?: number | null
+  wmBilled?: number | null
+  wmRateUsd?: number | null
+  wmBillingFlag?: 'ok' | 'overbilled' | 'underbilled' | 'unknown'
 }
 
 export const FX_TO_USD: Record<string, number> = {
@@ -300,6 +304,37 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
       return `${s.description || 'Taxa'} (${s.section || 'n/a'}): ${s.currency || 'USD'} ${amt.toFixed(2)}`
     })
 
+    let wmExpected: number | null = null
+    let wmBilled: number | null = null
+    let wmRateUsd: number | null = null
+    let wmBillingFlag: 'ok' | 'overbilled' | 'underbilled' | 'unknown' = 'unknown'
+
+    if (q.modal === 'LCL') {
+      const pesoBrutoTon = (pedido.peso_bruto || 0) / 1000
+      const volumeM3 = pedido.volume || 0
+      wmExpected = Math.ceil(Math.max(pesoBrutoTon, volumeM3))
+
+      const rawWmBilled = cb.wm_units_billed !== undefined ? Number(cb.wm_units_billed) : null
+      const rawWmRate = cb.wm_rate_usd !== undefined ? Number(cb.wm_rate_usd) : null
+
+      wmBilled = rawWmBilled !== null && !isNaN(rawWmBilled) ? rawWmBilled : null
+      wmRateUsd =
+        rawWmRate !== null && !isNaN(rawWmRate) ? toUSD(rawWmRate, cb.wm_currency || 'USD') : null
+
+      if (wmBilled !== null && wmExpected !== null) {
+        if (wmBilled > wmExpected) wmBillingFlag = 'overbilled'
+        else if (wmBilled < wmExpected) wmBillingFlag = 'underbilled'
+        else wmBillingFlag = 'ok'
+      }
+
+      if (wmBilled !== null && wmRateUsd !== null && wmExpected !== null) {
+        const totalWm = wmBilled * wmRateUsd
+        addTaxesLog.push(
+          `W/M: ${wmBilled} × USD ${wmRateUsd.toFixed(2)}/WM = USD ${totalWm.toFixed(2)} (esperado: ${wmExpected} W/M)`,
+        )
+      }
+    }
+
     const subjectToReconfirmation =
       /subject to reconfirmation|unstable|subject to change|subject to increase/i.test(
         q.agent_name + ' ' + (q.option_description || ''),
@@ -331,6 +366,10 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
       missingDestination: !hasDestination,
       sectionsCount,
       surchargesCount: surcharges.length,
+      wmExpected,
+      wmBilled,
+      wmRateUsd,
+      wmBillingFlag,
     } as EnrichedQuotation & { freteUnitario: number; isEXW: boolean }
   })
 
@@ -353,13 +392,11 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
 
     let cheapest = validForRanking[0]
 
-    if (cheapest.dataConfidence === 'low') {
-      const reliableOptions = validForRanking.filter(
-        (q) => q.dataConfidence !== 'low' && q.computedTotal <= cheapest.computedTotal * 1.5,
-      )
-      if (reliableOptions.length > 0) {
-        cheapest = reliableOptions[0]
-      }
+    const reliableOptions = validForRanking.filter(
+      (q) => q.dataConfidence === 'high' || q.dataConfidence === 'medium',
+    )
+    if (reliableOptions.length > 0) {
+      cheapest = reliableOptions[0]
     }
 
     cheapest.isCheapest = true
@@ -412,6 +449,16 @@ export function rankMaritimo(quotations: Quotation[], pedido: Pedido): EnrichedQ
             warning = `⚠️ Cotação com poucos detalhes extraídos (${q.surchargesCount} surcharges em ${q.sectionsCount} seções). Total pode estar incompleto. Confirme com o agente.`
           }
           justificativa = justificativa ? `${warning} ${justificativa}` : warning
+        }
+
+        if (q.wmBillingFlag === 'overbilled' && q.wmBilled !== null && q.wmExpected !== null) {
+          const diff = q.wmBilled - q.wmExpected
+          const ton = Number(((pedido.peso_bruto || 0) / 1000).toFixed(3))
+          const m3 = Number((pedido.volume || 0).toFixed(3))
+          const overbillingWarning = `⚠️ W/M faturado (${q.wmBilled}) > esperado (${q.wmExpected}) — diferença de ${diff} W/M. Carga: ${ton} ton / ${m3} m³. Agente pode estar arredondando agressivamente; vale negociar.`
+          justificativa = justificativa
+            ? `${justificativa} ${overbillingWarning}`
+            : overbillingWarning
         }
       }
 
